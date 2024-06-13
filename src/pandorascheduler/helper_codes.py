@@ -72,7 +72,7 @@ def params_obs_NIRDA_VDA(t_name, priority, start, stop, ra, dec):
         }
 
     params_VDA = {
-        "StartRoiDetMethod": 0,
+        "StarRoiDetMethod": 0,
         "FramesPerCoadd": 50,
         "NumTotalFramesRequested": 9000,
         "TargetRA": f'{float(ra)}',
