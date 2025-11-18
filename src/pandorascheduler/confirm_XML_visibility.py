@@ -29,7 +29,7 @@ def check_visibility(target, start_time, stop_time):
     # Read visibility data
 
     if target.endswith(('b', 'c', 'd', 'e', 'f')):
-        st_name = target[:-2]
+        st_name = target[:-1]
     else:
         st_name = target
 
