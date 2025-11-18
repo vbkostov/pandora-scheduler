@@ -190,7 +190,8 @@ def star_vis(sun_block:float, moon_block:float, earth_block:float,
         if star_name_sc.startswith("G") and not star_name_sc.startswith("GJ") and not star_name_sc.startswith("GD"):
             star_name_sc = star_name_sc.replace('G', 'Gaia DR3 ')
 
-        star_sc = SkyCoord.from_name(star_name_sc)
+        # star_sc = SkyCoord.from_name(star_name_sc)
+        star_sc = SkyCoord(ra=target_data["RA"].iloc[i]*u.degree, dec=target_data["DEC"].iloc[i]*u.degree, frame="icrs")
         logging.info('Analyzing constraints for:', star_name)
         
         #Check if folder exists for target and if not create new folder for 
