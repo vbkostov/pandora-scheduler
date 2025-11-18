@@ -14,21 +14,19 @@ import random
 import json
 import logging
 
-# VK BEGIN:
 import helper_codes
 import helper_codes_aux as hcc
 import importlib
 import warnings
 warnings.filterwarnings("ignore")
-# VK END
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
-schedule_path = f'{PACKAGEDIR}/data/Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05.csv'#Pandora_Schedule_2025-08-04_to_2026-08-03_last.csv'#Pandora_Schedule_2025-08-04_3months_29Aug2024.csv'#Pandora_Schedule_2025-08-04_2months.csv'#Pandora_Schedule_2025-08-04.csv'
+schedule_path = f'{PACKAGEDIR}/data/Pandora_Schedule_2026-02-05_to_2027-02-05_111825.csv'#Pandora_Schedule_2025-08-04_to_2026-08-03_last.csv'#Pandora_Schedule_2025-08-04_3months_29Aug2024.csv'#Pandora_Schedule_2025-08-04_2months.csv'#Pandora_Schedule_2025-08-04.csv'
 
 tar_vis_path = f'{PACKAGEDIR}/data/targets/'
 aux_vis_path = f'{PACKAGEDIR}/data/aux_targets/'
 
-tar_path = f'{PACKAGEDIR}/data/exoplanet_targets.csv'#primary-exoplanet-extended_targets.csv'#Pandora_Target_List_Top20_14May2024.csv'#target_list_top20_16Feb2024.csv'
+tar_path = f'{PACKAGEDIR}/data/exoplanet_targets.csv'
 t_list = pd.read_csv(tar_path)
 
 aux_path = f'{PACKAGEDIR}/data/all_targets.csv'
@@ -145,18 +143,16 @@ meta=ET.SubElement(cal, 'Meta',
                    Valid_From=f"{sch['Observation Start'][0]}",
                    Expires=f"{sch['Observation Stop'][len(sch)-1]}",
                    Calendar_Weights='0.8, 0.0, 0.2',
-                #    Ephemeris='sma=6828.14, ecc=0.0, inc=97.2188, aop=0.0, raan=303.263, ta=0.0',
                    Keepout_Angles='91.0, 25.0, 63.0',
                    Observation_Sequence_Duration_hrs_max = f'{dt}',
                    Removed_Sequences_Shorter_Than_min = f'{too_short_sequences}',
                    Created=f'{str(hcc.round_to_nearest_second(datetime.now()))}',
-#                   Author="P Bonney",
                    Delivery_Id='',
                    )
 #
 #
 #
-for i in tqdm(range(10)):#len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
+for i in tqdm(range(5)):#len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')#format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -185,9 +181,6 @@ for i in tqdm(range(10)):#len(sch))):#, position = 0, leave = True):#len(sch))):
     stop = datetime.strptime(sch['Observation Stop'][i], "%Y-%m-%d %H:%M:%S")
     
     #Get visibility data, replace if then with the flag later
-    # if not t_name.startswith('Gaia'):# or t_name.startswith('Free'):
-    # if t_name.endswith(('b', 'c', 'd', 'e', 'f')):
-    # del v_data
     if t_name in t_list['Planet Name'].values and exoplanet_tdf:
         v_data = pd.read_csv(tar_vis_path+f'{st_name}/Visibility for {st_name}.csv')
         tmp_idx = t_list.index[t_list['Planet Name'] == t_name].tolist()
@@ -214,10 +207,6 @@ for i in tqdm(range(10)):#len(sch))):#, position = 0, leave = True):#len(sch))):
     #     targ_info = a_list.loc[(a_list['Star Name'] == t_name) & (a_list['Planet Name'].notna())]#a_list.loc[(a_list['Star Name'] == t_name)]
     #     i_flag = 0
 
-    # if t_name == 'TRAPPIST-1 f':
-    #     print('TRAPPIST-1 f')
-
-    # VK BEGIN: try getting RA & Dec from SkyCoord
     try:
         ra = targ_info['RA'].iloc[0]
         dec = targ_info['DEC'].iloc[0]
@@ -225,7 +214,6 @@ for i in tqdm(range(10)):#len(sch))):#, position = 0, leave = True):#len(sch))):
         star_sc = SkyCoord.from_name(st_name)
         ra = star_sc.ra.deg
         dec = star_sc.dec.deg
-    # VK END
     
     #get times during this visit
     v_time_all = Time(v_data["Time(MJD_UTC)"], format="mjd", scale="utc").to_value("datetime")
@@ -233,12 +221,11 @@ for i in tqdm(range(10)):#len(sch))):#, position = 0, leave = True):#len(sch))):
     v_time = np.vectorize(hcc.round_to_nearest_second)(v_time)
     v_flag = np.asarray(v_data['Visible'])[(v_time_all >= start) & (v_time_all <= stop)]
 
-    # VK START: REMOVE SEQUENCES THAT ARE TOO SHORT:
+    # REMOVE SEQUENCES THAT ARE TOO SHORT:
     v_flag_update, positions = hcc.remove_short_sequences(v_flag, too_short_sequences)
     # if v_flag_update[-1] == 0.:
     #     v_flag_update[-1] = 1.
     v_flag = v_flag_update.copy()
-    # VK END
 
     #figure out where the visibility changes (gives final element where the visibility is the same)
     v_change = np.where(v_flag[:-1] != v_flag[1:])[0]
@@ -274,7 +261,6 @@ for i in tqdm(range(10)):#len(sch))):#, position = 0, leave = True):#len(sch))):
 
             aa = helper_codes.observation_sequence(visit, f'{("0"*(3-len(str(s+1))))+str(s+1)}', \
                 t_name, pr, sps_all[s], sps_all[s+1], ra, dec, targ_info)
-            # print('xxx')
             pass
 
     if len(v_change) == 0:
