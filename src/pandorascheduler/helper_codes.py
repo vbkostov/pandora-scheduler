@@ -7,8 +7,17 @@ from astropy.time import Time
 from tqdm import tqdm
 import os
 import re
+import logging
+import requests
+from multiprocessing import Pool
+from functools import partial
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(PACKAGEDIR, "..", ".."))
+TARGET_DEF_BASE = os.path.abspath(os.path.join(PROJECT_ROOT, "..", "PandoraTargetList", "target_definition_files"))
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 def general_parameters(obs_sequence_duration = 90, occ_sequence_limit = 30):
     observation_sequence_duration = obs_sequence_duration # minutes
@@ -16,9 +25,6 @@ def general_parameters(obs_sequence_duration = 90, occ_sequence_limit = 30):
     return observation_sequence_duration, occultation_sequence_limit
 
 def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, dec, targ_info):
-
-    import logging
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     o_seq = ET.SubElement(visit,'Observation_Sequence')
     obs_seq_id = ET.SubElement(o_seq, "ID")
@@ -51,10 +57,9 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
     nirda_columns = targ_info.columns[targ_info.columns.str.startswith('NIRDA_')]
     columns_to_ignore = ['IncludeFieldSolnsInResp', 'NIRDA_TargetID', 'NIRDA_SC_Integrations', 'NIRDA_FramesPerIntegration', 'NIRDA_IntegrationTime_s']
     for nirda_key, nirda_values in targ_info[nirda_columns].iloc[0].items():
-    # for nirda_key, nirda_values in zip(params_NIRDA.keys(), params_NIRDA.values()):
         if pd.notna(nirda_values):  # This condition checks if the value is not NaN
             xml_key = nirda_key.replace('NIRDA_', '')
-            if (nirda_key not in columns_to_ignore):# and (nirda_key != 'NIRDA_SC_Integrations'):
+            if (nirda_key not in columns_to_ignore):
                 nirda_subelement_ = ET.SubElement(nirda, xml_key)
                 nirda_subelement_.text = str(nirda_values)
             elif nirda_key == 'NIRDA_TargetID':
@@ -68,17 +73,13 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 nirda_subelement_ = ET.SubElement(nirda, xml_key)
                 nirda_subelement_.text = str(np.round(diff_in_sec/targ_info['NIRDA_IntegrationTime_s'].iloc[0]).astype(int))
             pass
-        # else:
-        #     logging.info(f"Searching for occultation targets from {st} to {sp}")
 
     ### VDA Parameters:
     vda = ET.SubElement(payload_parameters, "AcquireVisCamScienceData")
     vda_columns = targ_info.columns[targ_info.columns.str.startswith('VDA_')]
-    # columns_to_ignore = ['VDA_IntegrationTime']
     columns_to_ignore = ['VDA_NumExposuresMax', 'VDA_NumTotalFramesRequested', 'VDA_TargetID', 'VDA_TargetRA', 'VDA_TargetDEC', \
         'VDA_StarRoiDetMethod', 'VDA_numPredefinedStarRois', 'VDA_PredefinedStarRoiRa', 'VDA_PredefinedStarRoiDec', \
             'VDA_IntegrationTime_s', 'VDA_MaxNumStarRois']
-    # for vda_key, vda_values in zip(params_VDA.keys(), params_VDA.values()):
     for vda_key, vda_values in targ_info[vda_columns].iloc[0].items():
         if pd.notna(vda_values):  # This condition checks if the value is not NaN
             xml_key = vda_key.replace('VDA_', '')
@@ -119,7 +120,6 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 import ast
                 all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                # vda_subelement_.text = str(all_columns[:,0])
                 for jj in range(all_columns.shape[0]):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'RA{jj+1}')
                     vda_subelement_tmp.text = f'{all_columns[jj,0]:.6f}'
@@ -129,23 +129,13 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 import ast
                 all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                # vda_subelement_.text = str(all_columns[:,1])
                 for jj in range(all_columns.shape[0]):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'Dec{jj+1}')
                     vda_subelement_tmp.text = f'{all_columns[jj,1]:.6f}'
             elif vda_key == 'VDA_NumTotalFramesRequested':
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                # vda_subelement_.text = str(np.round(diff_in_sec/targ_info['VDA_IntegrationTime_s'].iloc[0]).astype(int))
-                # vda_subelement_.text = str((diff_in_sec/targ_info['VDA_IntegrationTime_s'].iloc[0]//targ_info['VDA_FramesPerCoadd'].iloc[0]).astype(int))
                 vda_subelement_.text = str((diff_in_sec/(1e-6*targ_info['VDA_ExposureTime_us'].iloc[0])//targ_info['VDA_FramesPerCoadd'].iloc[0]*targ_info['VDA_FramesPerCoadd'].iloc[0]).astype(int))
-            # elif vda_key == 'VDA_NumExposuresMax':
-            #     vda_subelement_ = ET.SubElement(vda, xml_key)
-            #     # vda_subelement_.text = str(np.round(diff_in_sec/targ_info['VDA_IntegrationTime_s'].iloc[0]).astype(int))
-            #     vda_subelement_.text = str((diff_in_sec/targ_info['VDA_IntegrationTime_s'].iloc[0]//targ_info['VDA_FramesPerCoadd'].iloc[0]).astype(int))
-            
             pass
-        # else:
-        #     logging.info(f"Searching for occultation targets from {st} to {sp}")
 
     return o_seq
 
@@ -299,7 +289,7 @@ def update_target_list(targ_list, pl_names, which_targets):
     # updated_targ_list = filtered_targ_list.copy()
     updated_targ_list = targ_list.copy()
 
-    dir_tmp = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/' + which_targets
+    dir_tmp = os.path.join(TARGET_DEF_BASE, which_targets)
     json_files = glob.glob(f'{dir_tmp}/*.json')
 
     for file in json_files:
@@ -312,7 +302,7 @@ def update_target_list(targ_list, pl_names, which_targets):
         # Handle any potential NaN values in the original column
         updated_targ_list['Transit Epoch (BJD_TDB) - 2400000.5'] = updated_targ_list['Transit Epoch (BJD_TDB) - 2400000.5'].fillna(-999)
 
-    dir_tmp = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/'
+    dir_tmp = TARGET_DEF_BASE
     with open(dir_tmp + 'nirda_readout_schemes.json', 'r') as file:
         nirda_settings = json.load(file)['data']
 
@@ -361,7 +351,12 @@ def find_first_visible_target(start, stop, names):
             vis_filtered = vis[time_mask]
             
             if not vis_filtered.empty and vis_filtered['Visible'].all():
-                print(f'VK use the 1st aux target that is 100% visible; start = {start}; stop = {stop}, {n}')
+                logger.info(
+                    "Found fully visible auxiliary target %s for interval %s to %s",
+                    names[n],
+                    start,
+                    stop,
+                )
                 return n, 100.0  # Return index and visibility percentage
             
             elif not vis_filtered.empty and vis_filtered['Visible'].any():
@@ -687,7 +682,7 @@ def print_element_from_xml(elem, level=0):
         print_element_from_xml(child, level + 1)
 
 def get_targets_table(which_targets):
-    directory = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/' + which_targets
+    directory = os.path.join(TARGET_DEF_BASE, which_targets)
     df = pd.DataFrame(parse_json_files(directory))
     df = df.sort_values('Planet Name')
     df = df.reset_index(drop=True)
@@ -796,7 +791,11 @@ def read_json_from_github(url):
         # Parse JSON content
         return json.loads(response.text)
     else:
-        print(f"Failed to fetch file. Status code: {response.status_code}")
+        logger.warning(
+            "Failed to fetch %s with status code %s",
+            url,
+            response.status_code,
+        )
         return None
 #
 #
@@ -809,29 +808,16 @@ def load_readout_schemes(filename):
 #
 #
 def process_target_files(keyword):
-    base_dir = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/'  # Set this to your base directory if needed
+    base_dir = TARGET_DEF_BASE  # Set this to your base directory if needed
     directory = os.path.join(base_dir, keyword)
     
     if not os.path.exists(directory):
-        print(f"Directory not found: {directory}")
+        logger.warning("Directory not found: %s", directory)
         return None
 
     # Load readout schemes
-    nirda_schemes = load_readout_schemes(base_dir + 'nirda_readout_schemes.json')
-    vda_schemes = load_readout_schemes(base_dir + 'vda_readout_schemes.json')
-
-    # def flatten_dict(d, parent_key='', sep='_'):
-    #     items = []
-    #     for k, v in d.items():
-    #         new_key = f"{parent_key}{sep}{k}" if parent_key else k
-    #         if isinstance(v, dict):
-    #             items.extend(flatten_dict(v, new_key, sep=sep).items())
-    #         elif isinstance(v, list):
-    #             for i, item in enumerate(v):
-    #                 items.extend(flatten_dict(item, f"{new_key}{sep}{i}", sep=sep).items())
-    #         else:
-    #             items.append((new_key, v))
-    #     return dict(items)
+    nirda_schemes = load_readout_schemes(os.path.join(base_dir, 'nirda_readout_schemes.json'))
+    vda_schemes = load_readout_schemes(os.path.join(base_dir, 'vda_readout_schemes.json'))
 
     def flatten_dict(d, parent_key='', sep='_'):
         items = []
@@ -848,9 +834,6 @@ def process_target_files(keyword):
             else:
                 items.append((new_key, v))
         return dict(items)
-
-    # if keyword == 'auxiliary-standard':
-    #     aaa = 333.
 
     data_list = []
     for filename in tqdm(os.listdir(directory)):
@@ -883,16 +866,7 @@ def process_target_files(keyword):
                 flat_data['Number of Hours Requested'] = int(data[data["target"] == original_filename]["hours_req"].values[0])
             elif keyword in ('occultation-standard'):
                 flat_data['Priority'] = 0.1 # Default priority
-                # flat_data['Number of Transits to Capture'] = 0
 
-            # if (keyword == "primary-exoplanet") or (keyword == "secondary-exoplanet"):
-            #     flat_data['Priority'] = 1  # Default priority
-            # else:
-            #     non_primary_priority_fn = os.path.join(directory, f"{keyword}_priorities.csv")
-            #     metadata, data = read_priority_csv(non_primary_priority_fn)
-            #     non_primary_priority = data[data["target"] == original_filename]["priority"].values[0]
-            #     flat_data['Priority'] = non_primary_priority
-            
             # Add NIRDA and VDA readout scheme data
             nirda_setting = flat_data.get('NIRDA Setting')
             vda_setting = flat_data.get('VDA Setting')
@@ -913,9 +887,6 @@ def process_target_files(keyword):
                 for key, value in vda_schemes[vda_setting].items():
                     flat_data[f'VDA_{key}'] = value
             
-            # if not filename.startswith('DR3') or keyword != 'monitoring-standard':
-            # if keyword != 'monitoring-standard' or keyword !='occultation-standard':
-            # if keyword != 'monitoring-standard' and keyword !='occultation-standard':
             if keyword not in ('monitoring-standard', 'occultation-standard'):
                 # Separate the last lowercase letter with a space
                 planet_name = re.sub(r'([a-z])$', r' \1', flat_data.get('Planet Name', ''))
@@ -936,7 +907,7 @@ def process_target_files(keyword):
             data_list.append(flat_data)
 
     if not data_list:
-        print(f"No valid JSON files found in {directory}")
+        logger.warning("No valid JSON files found in %s", directory)
         return None
 
     df = pd.DataFrame(data_list)
@@ -1025,10 +996,10 @@ def create_aux_list(target_definition_files, PACKAGEDIR):
             df = pd.read_csv(file)
             dfs.append(df)
         else:
-            print(f"Warning: File {file} not found. Skipping.")
+            logger.warning("File %s not found. Skipping.", file)
 
     if not dfs:
-        print("No valid files found. Exiting.")
+        logger.error("No valid files found in %s", PACKAGEDIR)
         exit()
 
     # Store the column order of the first file
@@ -1265,7 +1236,7 @@ def sch_occ_old_but_working(starts, stops, list_path, sort_key=None, prev_obs = 
                 o_list = o_list.sort_values(by='sky_dif').reset_index(drop=True)
                 
             except NameError:
-                print('No previous observation was specified, defaulting to random auxiliary target.')
+                logger.info('No previous observation specified; defaulting to random auxiliary target ordering.')
                 o_list.sample(frac=1).reset_index(drop=True)
         else:
             #default sort is random
@@ -1448,192 +1419,3 @@ def check_visibility():
     plt.subplots_adjust(hspace=0.1) 
     plt.show()
 
-# def ToO(nophase_starts):
-#     ## First check if a Target of Opportunity is within observing window
-#     overlap_nophase = obs_rng.intersection(nophase_starts)
-#     if len(overlap_nophase) > 0:
-#         obs_start = nophase_starts[nophase_starts.index(overlap_nophase[0])]
-#         obs_stop = nophase_stops[nophase_starts.index(overlap_nophase[0])]
-#         ToO = nophase_targets[nophase_starts.index(overlap_nophase[0])]
-
-#         sched = [[ToO, obs_start, obs_stop]]
-#         sched = pd.DataFrame(sched, columns=["Target", "Observation Start", "Observation Stop"])
-
-#         if obs_rng[0] < obs_start:
-#             free = [["FREE TIME BEFORE TOO", obs_rng[0], obs_start]]
-#             free = pd.DataFrame(
-#                 free, columns=["Target", "Observation Start", "Observation Stop"]
-#             )
-#             sched_df = pd.concat([sched_df, free], axis=0)
-
-#         if sched_df.empty:
-#             sched_df = sched.copy()
-#         else:        
-#             sched_df = pd.concat([sched_df, sched], axis=0)
-
-#         logging.info("Scheduled Target of Opportunity", ToO)
-#         start = obs_stop
-#         stop = start + obs_window
-#         # continue
-
-#         print('------------> ToO: Check code below with TF (probably comes from PB) <------------')
-
-#         # Check minimum targeting requirements (MTR) for each planet
-#         for i in range(len(tracker)):
-
-#             tf = tracker["Transits Left in Lifetime"][i]/tracker["Transits Needed"][i]
-
-#             if tf <= 1.:
-#                 # Force compliance with minimum targeting requirements if the final transit occurs within the observation window
-#                 planet_name = tracker["Planet Name"][i]
-#                 star_name_tmp = pd.Series(planet_name).apply(helper_codes.remove_suffix)
-#                 planet_data = pd.read_csv(f"{PACKAGEDIR}/data/targets/{star_name_tmp.iloc[0]}/{planet_name}/Visibility for {planet_name}.csv")
-
-#                 start_transit = Time(planet_data["Transit_Start"].iloc[-1], format='mjd', scale='utc')
-#                 end_transit = Time(planet_data["Transit_Stop"].iloc[-1], format='mjd', scale='utc')  
-#                 start_transit = start_transit.datetime.replace(second=0, microsecond=0)
-#                 end_transit = end_transit.datetime.replace(second=0, microsecond=0)
-
-#                 early_start = end_transit - timedelta(
-#                     hours=20
-#                 )  # Earliest start time to capture transit plus >=4 hours post transit
-#                 late_start = start_transit - timedelta(
-#                     hours=4
-#                 )  # Latest start time to capture transit plus >=4 hours pre transit
-
-#                 # Check if any transit occurs during observing window 
-#                 start_rng = pd.date_range(early_start, late_start, freq="min")
-#                 overlap_times = obs_rng.intersection(start_rng)
-                
-#                 if len(overlap_times) > 0:
-#                     # Calc a 'transit factor'
-#                     t_left = tracker.loc[
-#                         (tracker["Planet Name"] == planet_name),
-#                         "Transits Left in Lifetime",
-#                     ].iloc[0]
-#                     t_need = tracker.loc[
-#                         (tracker["Planet Name"] == planet_name), "Transits Needed"
-#                     ].iloc[0]
-#                     t_factor = t_left / t_need
-
-#                     # Calc scheduling efficiency factor
-#                     obs_start = overlap_times[0]
-#                     gap_time = obs_start - obs_rng[0]
-#                     s_factor = 1 - (gap_time / obs_window)  # maximize
-
-#                     # Calc a quality factor (currently based on transit coverage, SAA crossing, scheduling efficiency)
-#                     trans_cover = planet_data["Transit_Coverage"][-1]  # maximize
-#                     saa_cover = planet_data["SAA_Overlap"][-1]
-#                     q_factor = (
-#                         (sched_wts[0] * trans_cover)
-#                         + (sched_wts[1] * (1 - saa_cover))
-#                         + (sched_wts[2] * s_factor)
-#                     )
-                    
-#                     # Schedule observation with warning
-        
-#                     if obs_rng[0] < obs_start:
-#                         free = [["FREE TIME BEFORE TOO", obs_rng[0], obs_start]]
-#                         free = pd.DataFrame(
-#                             free, columns=["Target", "Observation Start", "Observation Stop"]
-#                         )
-#                         sched_df = pd.concat([sched_df, free], axis=0)
-        
-#                     sched = [
-#                         [
-#                             planet_name,
-#                             obs_start,
-#                             obs_stop,
-#                             trans_cover,
-#                             saa_cover,
-#                             s_factor,
-#                             q_factor,
-#                             f'{planet_name} Observation Forced Over Targer of Opportunity',
-#                         ]
-#                     ]
-#                     sched = pd.DataFrame(
-#                         sched,
-#                         columns=[
-#                             "Target",
-#                             "Observation Start",
-#                             "Observation Stop",
-#                             "Transit Coverage",
-#                             "SAA Overlap",
-#                             "Schedule Factor",
-#                             "Quality Factor",
-#                             "Comments",
-#                         ],
-#                     )
-#                     # sched_df = pd.concat([sched_df, sched], axis=0)
-#                     if sched_df.empty:
-#                         sched_df = sched.copy()
-#                     else:        
-#                         sched_df = pd.concat([sched_df, sched], axis=0)
-        
-#                     # update tracker info
-#                     tracker.loc[(tracker["Planet Name"] == planet_name), "Transits Needed"] = (
-#                         tracker.loc[(tracker["Planet Name"] == planet_name)]["Transits Needed"]
-#                         - 1
-#                     )
-#                     tracker.loc[
-#                         (tracker["Planet Name"] == planet_name), "Transits Acquired"
-#                     ] = (
-#                         tracker.loc[(tracker["Planet Name"] == planet_name)][
-#                             "Transits Acquired"
-#                         ]
-#                         + 1
-#                     )
-#                     tracker.loc[(tracker["Planet Name"] == planet_name), "Transit Priority"] = (
-#                         tracker.loc[
-#                             (tracker["Planet Name"] == planet_name), "Transits Left in Lifetime"
-#                         ]
-#                         - tracker.loc[
-#                             (tracker["Planet Name"] == planet_name), "Transits Needed"
-#                         ]
-#                     )
-#                     # logging.warning(planet_name, "{planet_name} Observation Forced Over No Phase Event")
-#                     print(f'{planet_name} Observation Forced Over Targer of Opportunity')
-#                     logging.info(
-#                         "Scheduled the ",
-#                         tracker.loc[
-#                             (tracker["Planet Name"] == planet_name), "Transits Acquired"
-#                         ].iloc[0],
-#                         " transit of ",
-#                         planet_name,
-#                         "transit coverage: ",
-#                         trans_cover,
-#                     )
-#                     start = obs_stop
-#                     stop = start + obs_window
-#                     continue
-            
-#             elif 1. < tf <= 2.:
-#                 #Flag that the MTRM is getting low for the planet, but do
-#                 #not force compliance
-#                 # planet_name = tracker["Planet Name"][i]
-#                 if obs_rng[0] < obs_start:
-#                     free = [["Free Time", obs_rng[0], obs_start]]
-#                     free = pd.DataFrame(
-#                         free, columns=["Target", "Observation Start", "Observation Stop"]
-#                     )
-#                     sched_df = pd.concat([sched_df, free], axis=0)
-    
-#                 sched = [[ToO, obs_start, obs_stop, f"Warning: {planet_name} has MTRM < 2 and is transiting during ToO"]]
-#                 sched = pd.DataFrame(
-#                     sched, columns=["Target", "Observation Start", "Observation Stop", "Comments"]
-#                 )
-#                 # sched_df = pd.concat([sched_df, sched], axis=0)
-#                 if sched_df.empty:
-#                     sched_df = sched.copy()
-#                 else:        
-#                     sched_df = pd.concat([sched_df, sched], axis=0)
-    
-#                 # logging.info("Scheduled no phase event", ToO)
-#                 # logging.warning(ToO, "Warning: {planet_name} has MTRM < 2 and is transiting during the event")
-#                 start = obs_stop
-#                 stop = start + obs_window
-#                 #recalculate MTRM?
-#                 continue
-
-#         continue  
-#        # ******ADD: functionality to force MTR prioritization and flag if nophase event causes the minimum schedule to not be met

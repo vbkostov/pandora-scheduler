@@ -1,0 +1,357 @@
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from astropy.time import Time
+
+from pandorascheduler_rework import observation_utils
+
+
+def _sample_target_row() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Planet Name": ["WASP-107 b"],
+            "Star Name": ["WASP-107"],
+            "Priority": ["1"],
+            "RA": [10.0],
+            "DEC": [-20.0],
+            "NIRDA_TargetID": ["WASP-107 b"],
+            "NIRDA_IntegrationTime_s": [1.4],
+            "NIRDA_AverageGroups": ["1"],
+            "NIRDA_SC_Integrations": [0],
+            "VDA_TargetID": ["WASP-107 b"],
+            "VDA_TargetRA": [10.0],
+            "VDA_TargetDEC": [-20.0],
+            "VDA_ExposureTime_us": [200000],
+            "VDA_FramesPerCoadd": [50],
+            "VDA_StarRoiDetMethod": [1],
+            "VDA_MaxNumStarRois": [np.nan],
+            "VDA_NumTotalFramesRequested": [np.nan],
+        }
+    )
+
+
+def test_general_parameters_defaults():
+    obs, occ = observation_utils.general_parameters()
+    assert obs == 90
+    assert occ == 30
+
+
+def test_remove_short_sequences_filters_runs():
+    array = np.array([1, 1, 0, 1, 1, 1])
+    trimmed, spans = observation_utils.remove_short_sequences(array, 3)
+    assert np.array_equal(trimmed, np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]))
+    assert spans == [(0, 1)]
+
+
+def test_break_long_sequences_partitions_range():
+    start = datetime(2025, 5, 1, 0, 0, 0)
+    end = start + timedelta(minutes=5)
+    segments = observation_utils.break_long_sequences(start, end, timedelta(minutes=2))
+    assert segments == [
+        (start, start + timedelta(minutes=2)),
+        (start + timedelta(minutes=2), start + timedelta(minutes=4)),
+        (start + timedelta(minutes=4), end),
+    ]
+
+
+def test_remove_suffix_handles_planet_suffix():
+    assert observation_utils.remove_suffix("WASP-107 b") == "WASP-107"
+    assert observation_utils.remove_suffix("HD 1234") == "HD 1234"
+
+
+def test_observation_sequence_emits_expected_xml():
+    visit = ET.Element("Visit")
+    start = datetime(2025, 5, 1, 0, 0, 0)
+    stop = start + timedelta(minutes=90)
+    targ_info = _sample_target_row()
+
+    sequence = observation_utils.observation_sequence(
+        visit,
+        "OBS-001",
+        "WASP-107 b",
+        "1",
+        start,
+        stop,
+        targ_info.loc[0, "RA"],
+        targ_info.loc[0, "DEC"],
+        targ_info,
+    )
+
+    assert sequence.tag == "Observation_Sequence"
+    ids = sequence.find("ID")
+    assert ids is not None and ids.text == "OBS-001"
+
+    obs_params = sequence.find("Observational_Parameters")
+    assert obs_params is not None
+    target = obs_params.find("Target")
+    assert target is not None and target.text == "WASP-107 b"
+
+    payload = sequence.find("Payload_Parameters")
+    assert payload is not None
+    nirda = payload.find("AcquireInfCamImages")
+    assert nirda is not None
+    assert nirda.find("TargetID").text == "WASP-107b"
+    assert int(nirda.find("SC_Integrations").text) > 0
+
+    vda = payload.find("AcquireVisCamScienceData")
+    assert vda is not None
+    assert vda.find("TargetID").text == "WASP-107b"
+    assert vda.find("TargetRA").text == str(targ_info.loc[0, "RA"])
+    assert vda.find("TargetDEC").text == str(targ_info.loc[0, "DEC"])
+
+
+def test_schedule_occultation_targets_selects_visible_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    start_mjd = np.array([60000.0])
+    stop_mjd = np.array([60000.0625])
+
+    vis_dir = tmp_path / "aux_targets" / "Alpha"
+    vis_dir.mkdir(parents=True)
+    (vis_dir / "Visibility for Alpha.csv").write_text(
+        "Time(MJD_UTC),Visible\n60000.0,1\n60000.0625,1\n"
+    )
+
+    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [tmp_path])
+
+    o_df = pd.DataFrame(
+        {
+            "Target": [np.nan],
+            "RA": [np.nan],
+            "DEC": [np.nan],
+        }
+    )
+    o_list = pd.DataFrame(
+        {
+            "Star Name": ["Alpha"],
+            "RA": [123.4],
+            "DEC": [-56.7],
+        }
+    ).set_index(pd.Index(start_mjd, name="Start"))
+
+    updated, filled = observation_utils.schedule_occultation_targets(
+        v_names=["Alpha"],
+        starts=start_mjd,
+        stops=stop_mjd,
+        visit_start=datetime(2025, 5, 1, 0, 0, 0),
+        visit_stop=datetime(2025, 5, 1, 1, 30, 0),
+        path=tmp_path,
+        o_df=o_df.copy(),
+        o_list=o_list.reset_index(drop=True),
+        try_occ_targets="aux list",
+    )
+
+    assert filled is True
+    assert updated.loc[0, "Target"] == "Alpha"
+    assert updated.loc[0, "RA"] == 123.4
+    assert updated.loc[0, "Visibility"] == 1
+
+
+def test_save_observation_time_report_writes_csv(tmp_path: Path):
+    output = tmp_path / "report.csv"
+    observation_utils.save_observation_time_report(
+        {"WASP-107 b": timedelta(hours=2), "Aux": timedelta(hours=1)},
+        pd.DataFrame({"Planet Name": ["WASP-107 b"]}),
+        output,
+    )
+
+    content = output.read_text().splitlines()
+    assert content[0] == "Target,Is Primary,Total Observation Time (hours)"
+    assert "WASP-107 b,Yes,2.00" in content[1:]
+    assert "Aux,No,1.00" in content[1:]
+
+
+def test_schedule_occultation_targets_handles_zero_duration_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test that zero-duration windows (start==stop) are handled correctly.
+    
+    Legacy behavior: np.all([]) returns True, so empty windows accept the first candidate.
+    This test ensures we match that behavior to avoid regression.
+    """
+    # Zero-duration window: start and stop at the same time
+    start_mjd = np.array([60000.0])
+    stop_mjd = np.array([60000.0])  # Same as start - zero duration
+
+    vis_dir = tmp_path / "aux_targets" / "ZeroDurationTarget"
+    vis_dir.mkdir(parents=True)
+    # Visibility data that won't match the zero-duration window
+    (vis_dir / "Visibility for ZeroDurationTarget.csv").write_text(
+        "Time(MJD_UTC),Visible\n59999.9,1\n60000.1,1\n"
+    )
+
+    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [tmp_path])
+
+    o_df = pd.DataFrame(
+        {
+            "Target": [np.nan],
+            "RA": [np.nan],
+            "DEC": [np.nan],
+        }
+    )
+    o_list = pd.DataFrame(
+        {
+            "Star Name": ["ZeroDurationTarget"],
+            "RA": [100.0],
+            "DEC": [-30.0],
+        }
+    )
+
+    updated, filled = observation_utils.schedule_occultation_targets(
+        v_names=["ZeroDurationTarget"],
+        starts=start_mjd,
+        stops=stop_mjd,
+        visit_start=datetime(2025, 5, 1, 0, 0, 0),
+        visit_stop=datetime(2025, 5, 1, 1, 0, 0),
+        path=tmp_path,
+        o_df=o_df.copy(),
+        o_list=o_list,
+        try_occ_targets="aux list",
+    )
+
+    # Should succeed because np.all([]) == True (legacy behavior)
+    assert filled is True
+    assert updated.loc[0, "Target"] == "ZeroDurationTarget"
+    assert updated.loc[0, "Visibility"] == 1
+
+
+def test_schedule_occultation_targets_fills_multiple_windows_with_one_unfilled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test that if 27 out of 28 windows are filled, the function returns False.
+    
+    This ensures we match legacy behavior where ALL windows must be filled for success.
+    """
+    # Create 28 windows - 27 normal, 1 zero-duration
+    starts = [60000.0 + i * 0.03 for i in range(27)] + [60001.0]
+    stops = [60000.0 + i * 0.03 + 0.02 for i in range(27)] + [60001.0]  # Last one is zero-duration
+    starts_mjd = np.array(starts)
+    stops_mjd = np.array(stops)
+
+    vis_dir = tmp_path / "aux_targets" / "MultiWindow"
+    vis_dir.mkdir(parents=True)
+    # Create visibility that covers all normal windows but not the zero-duration one
+    vis_times = [60000.0 + i * 0.001 for i in range(1500)]
+    vis_flags = [1] * 1500
+    vis_df = pd.DataFrame({"Time(MJD_UTC)": vis_times, "Visible": vis_flags})
+    vis_df.to_csv(vis_dir / "Visibility for MultiWindow.csv", index=False)
+
+    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [tmp_path])
+
+    o_df = pd.DataFrame(
+        {
+            "Target": [""] * 28,
+            "start": [f"{s}" for s in starts],
+            "stop": [f"{sp}" for sp in stops],
+            "RA": [np.nan] * 28,
+            "DEC": [np.nan] * 28,
+        }
+    )
+    o_list = pd.DataFrame(
+        {
+            "Star Name": ["MultiWindow"],
+            "RA": [150.0],
+            "DEC": [20.0],
+        }
+    )
+
+    updated, filled = observation_utils.schedule_occultation_targets(
+        v_names=["MultiWindow"],
+        starts=starts_mjd,
+        stops=stops_mjd,
+        visit_start=datetime(2025, 5, 1, 0, 0, 0),
+        visit_stop=datetime(2025, 5, 2, 0, 0, 0),
+        path=tmp_path,
+        o_df=o_df.copy(),
+        o_list=o_list,
+        try_occ_targets="aux list",
+    )
+
+    # All 28 windows should be filled (including zero-duration)
+    assert filled is True
+    filled_count = (updated["Target"] == "MultiWindow").sum()
+    assert filled_count == 28
+
+
+def test_check_if_transits_in_obs_window_matches_basic_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    star_dir = tmp_path / "targets" / "WASP-107" / "WASP-107 b"
+    star_dir.mkdir(parents=True)
+    start = datetime(2025, 5, 1, 0, 0, 0)
+    transit_start_dt = start + timedelta(hours=4)
+    transit_stop_dt = transit_start_dt + timedelta(minutes=30)
+
+    planet_visibility = pd.DataFrame(
+        {
+            "Transit_Start": [Time(transit_start_dt, scale="utc").to_value("mjd")],
+            "Transit_Stop": [Time(transit_stop_dt, scale="utc").to_value("mjd")],
+            "Transit_Coverage": [1.0],
+            "SAA_Overlap": [0.0],
+        }
+    )
+    planet_visibility.to_csv(star_dir / "Visibility for WASP-107 b.csv", index=False)
+
+    star_root = tmp_path / "targets" / "WASP-107"
+    star_root.mkdir(parents=True, exist_ok=True)
+    start_mjd = Time(start, scale="utc").to_value("mjd")
+    stop_mjd = Time(start + timedelta(minutes=90), scale="utc").to_value("mjd")
+    (star_root / "Visibility for WASP-107.csv").write_text(
+        f"Time(MJD_UTC),Visible\n{start_mjd},1\n{stop_mjd},1\n"
+    )
+
+    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [tmp_path])
+
+    tracker = pd.DataFrame(
+        {
+            "Planet Name": ["WASP-107 b"],
+            "Primary Target": [1],
+            "RA": [10.0],
+            "DEC": [-20.0],
+            "Transits Needed": [1],
+            "Transits Left in Lifetime": [0],
+            "Transits Left in Schedule": [0],
+            "Transit Priority": [0],
+        }
+    )
+    temp_df = pd.DataFrame(
+        columns=[
+            "Planet Name",
+            "RA",
+            "DEC",
+            "Obs Start",
+            "Obs Gap Time",
+            "Transit Coverage",
+            "SAA Overlap",
+            "Schedule Factor",
+            "Transit Factor",
+            "Quality Factor",
+            "Comments",
+        ]
+    )
+    target_list = pd.DataFrame(
+        {
+            "Planet Name": ["WASP-107 b"],
+            "Star Name": ["WASP-107"],
+        }
+    )
+
+    obs_rng = pd.date_range(start, start + timedelta(minutes=90), freq="min")
+    result = observation_utils.check_if_transits_in_obs_window(
+        tracker,
+        temp_df,
+        target_list,
+        start,
+        start,
+        start + timedelta(days=1),
+        start,
+        start + timedelta(days=1),
+        obs_rng,
+        timedelta(minutes=90),
+        [0.5, 0.25, 0.25],
+        0.0,
+    )
+
+    assert not result.empty
+    assert result.iloc[0]["Planet Name"] == "WASP-107 b"
+    assert tracker.loc[0, "Transits Left in Lifetime"] == 1
+    assert tracker.loc[0, "Transits Left in Schedule"] == 1
