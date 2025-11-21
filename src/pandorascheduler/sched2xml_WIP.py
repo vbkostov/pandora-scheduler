@@ -152,7 +152,7 @@ meta=ET.SubElement(cal, 'Meta',
 #
 #
 #
-for i in tqdm(range(40, 50)):#len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
+for i in tqdm(range(43, 46)):#len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')#format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -195,7 +195,7 @@ for i in tqdm(range(40, 50)):#len(sch))):#, position = 0, leave = True):#len(sch
         if len(tmp_idx) == 1:
             targ_info = pd.DataFrame(a_list.loc[tmp_idx[0]]).T
         else:
-            targ_info = pd.DataFrame(a_list.loc[tmp_idx][a_list.loc[tmp_idx]['numPredefinedStarRois'] == 0].iloc[1]).T
+            targ_info = pd.DataFrame(a_list.loc[tmp_idx][a_list.loc[tmp_idx]['numPredefinedStarRois'] == 0].iloc[0]).T
         i_flag = 0
     elif t_name == 'Free Time':
         continue
