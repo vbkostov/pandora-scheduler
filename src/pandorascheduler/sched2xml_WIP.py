@@ -152,7 +152,7 @@ meta=ET.SubElement(cal, 'Meta',
 #
 #
 #
-for i in tqdm(range(44,45)):#len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
+for i in tqdm(range(40, 50)):#len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')#format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -192,8 +192,10 @@ for i in tqdm(range(44,45)):#len(sch))):#, position = 0, leave = True):#len(sch)
     elif exoplanet_tdf == False and t_name != 'Free Time' and not t_name.startswith(('WARNING')):#t_name in a_list['Star Name'].values:
         v_data = pd.read_csv(aux_vis_path + f'{st_name}/Visibility for {t_name}.csv')
         tmp_idx = a_list.index[(a_list['Star Name'] == t_name)].tolist()
-        # targ_info = pd.DataFrame(a_list.loc[tmp_idx[0]]).T
-        targ_info = pd.DataFrame(a_list.loc[tmp_idx][a_list.loc[tmp_idx]['numPredefinedStarRois'] == 0].iloc[1]).T
+        if len(tmp_idx) == 1:
+            targ_info = pd.DataFrame(a_list.loc[tmp_idx[0]]).T
+        else:
+            targ_info = pd.DataFrame(a_list.loc[tmp_idx][a_list.loc[tmp_idx]['numPredefinedStarRois'] == 0].iloc[1]).T
         i_flag = 0
     elif t_name == 'Free Time':
         continue
