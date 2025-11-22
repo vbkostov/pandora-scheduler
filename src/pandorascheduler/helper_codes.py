@@ -1510,7 +1510,7 @@ def check_visibility():
     # fig.tight_layout(pad=0.5)
 
     for ii, tt in enumerate(targ):
-        tf_vis = pd.read_csv(f"{PACKAGEDIR}/src/pandorascheduler/data/targets/{tt}/Visibility for {tt}.csv")
+        tf_vis = pd.read_csv(f"{PACKAGEDIR}/data/targets/{tt}/Visibility for {tt}.csv")
         time_mjd = tf_vis['Time(MJD_UTC)'].values
         vis = tf_vis['Visible'].values
         
