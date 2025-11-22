@@ -118,20 +118,22 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 roi_coord_columns = [col for col in targ_info.columns if col.startswith('ROI_coord_') and col != 'ROI_coord_epoch']
                 roi_coord_values = targ_info[roi_coord_columns].dropna(axis = 1)
                 import ast
-                all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
+                ras_ = np.array([ast.literal_eval(coord)[0] for coord in roi_coord_values.iloc[0]])
+                ras_[0] = targ_info["RA"].iloc[0]
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                for jj in range(all_columns.shape[0]):
+                for jj in range(len(ras_)):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'RA{jj+1}')
-                    vda_subelement_tmp.text = f'{all_columns[jj,0]:.6f}'
+                    vda_subelement_tmp.text = f'{ras_[jj]:.6f}'
             elif vda_key == 'VDA_PredefinedStarRoiDec' and targ_info['StarRoiDetMethod'].iloc[0] != 2:
                 roi_coord_columns = [col for col in targ_info.columns if col.startswith('ROI_coord_') and col != 'ROI_coord_epoch']
                 roi_coord_values = targ_info[roi_coord_columns].dropna(axis = 1)
                 import ast
-                all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
+                decs_ = np.array([ast.literal_eval(coord)[1] for coord in roi_coord_values.iloc[0]])
+                decs_[0] = targ_info["DEC"].iloc[0]
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                for jj in range(all_columns.shape[0]):
+                for jj in range(len(decs_)):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'Dec{jj+1}')
-                    vda_subelement_tmp.text = f'{all_columns[jj,1]:.6f}'
+                    vda_subelement_tmp.text = f'{decs_[jj]:.6f}'
             elif vda_key == 'VDA_NumTotalFramesRequested':
                 vda_subelement_ = ET.SubElement(vda, xml_key)
                 vda_subelement_.text = str((diff_in_sec/(1e-6*targ_info['VDA_ExposureTime_us'].iloc[0])//targ_info['VDA_FramesPerCoadd'].iloc[0]*targ_info['VDA_FramesPerCoadd'].iloc[0]).astype(int))
