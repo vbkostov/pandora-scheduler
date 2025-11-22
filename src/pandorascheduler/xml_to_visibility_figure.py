@@ -3,7 +3,13 @@ import matplotlib.pyplot as plt
 from astropy.time import Time
 import pandas as pd
 import numpy as np
-fname = '/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/Pandora_science_calendar.xml'#calendar_top20_4weeks_start_2025_09_03.xml'
+import os
+
+# Use package-relative data path instead of a hardcoded user path
+PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
+DATA_DIR = os.path.join(PACKAGEDIR, "data")
+fname = os.path.join(DATA_DIR, "Pandora_science_calendar.xml")
+
 parser = etree.XMLParser(load_dtd=True, no_network=False)
 tree = etree.parse(fname, parser)
 root = tree.getroot()

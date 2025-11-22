@@ -381,7 +381,7 @@ def find_first_visible_target(start, stop, names):
             # Convert to Time object and filter in one step
             time_mask = (Time(vis["Time(MJD_UTC)"], format='mjd', scale='utc') >= start) & \
                         (Time(vis["Time(MJD_UTC)"], format='mjd', scale='utc') <= stop)
-            
+
             vis_filtered = vis[time_mask]
             
             if not vis_filtered.empty and vis_filtered['Visible'].all():
@@ -1134,7 +1134,7 @@ def create_aux_list(target_definition_files, PACKAGEDIR):
     combined_df = combined_df[sorted_columns]
 
     # Write the result to a new CSV file
-    output_file = f"{PACKAGEDIR}/data/all_targets.csv"
+    output_file = f"{PACKAGEDIR}/data/aux_list_new.csv"
     combined_df.to_csv(output_file, index=False)
 
     # print(f"Combined CSV created with {len(common_columns)} common columns.")
@@ -1510,7 +1510,7 @@ def check_visibility():
     # fig.tight_layout(pad=0.5)
 
     for ii, tt in enumerate(targ):
-        tf_vis = pd.read_csv(f"/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/targets/{tt}/Visibility for {tt}.csv")
+        tf_vis = pd.read_csv(f"{PACKAGEDIR}/src/pandorascheduler/data/targets/{tt}/Visibility for {tt}.csv")
         time_mjd = tf_vis['Time(MJD_UTC)'].values
         vis = tf_vis['Visible'].values
         
