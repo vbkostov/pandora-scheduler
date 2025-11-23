@@ -757,14 +757,8 @@ def _fallback_float(value: object, info: Optional[pd.DataFrame], column: str) ->
 
 
 def _resolve_coordinates(star_name: str) -> tuple[float, float]:
-    try:
-        coord = SkyCoord.from_name(star_name)
-        ra_deg = getattr(coord.ra, "degree", float("nan"))
-        dec_deg = getattr(coord.dec, "degree", float("nan"))
-        return float(ra_deg), float(dec_deg)
-    except Exception:  # SkyCoord lookup failed
-        LOGGER.error("Unable to resolve coordinates for %s", star_name)
-        return float("nan"), float("nan")
+    """Raise error if coordinates not in catalog - no Simbad lookups allowed."""
+    raise RuntimeError(f"No coordinates found in catalog for {star_name}")
 
 
 def _serialise_calendar(root: ET.Element) -> str:

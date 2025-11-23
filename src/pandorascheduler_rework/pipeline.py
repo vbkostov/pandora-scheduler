@@ -77,10 +77,7 @@ class SchedulerResult:
 def build_schedule(request: SchedulerRequest) -> SchedulerResult:
     """Run the modern scheduler and persist outputs alongside diagnostics."""
 
-    if not request.targets_manifest.exists():
-        raise FileNotFoundError(
-            f"Targets manifest does not exist: {request.targets_manifest}"
-        )
+
 
     request.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -142,6 +139,11 @@ def build_schedule(request: SchedulerRequest) -> SchedulerResult:
             occultation_target_csv,
         )
 
+    if not request.targets_manifest.exists():
+        raise FileNotFoundError(
+            f"Targets manifest does not exist: {request.targets_manifest}"
+        )
+
     _maybe_generate_visibility(
         request,
         paths,
@@ -149,6 +151,7 @@ def build_schedule(request: SchedulerRequest) -> SchedulerResult:
         pandora_stop,
         primary_target_csv,
         auxiliary_target_csv,
+        occultation_target_csv,
     )
 
     target_list = pd.read_csv(primary_target_csv)
@@ -199,23 +202,49 @@ def _maybe_generate_visibility(
     pandora_stop: datetime,
     primary_target_csv: Path,
     auxiliary_target_csv: Path,
+    occultation_target_csv: Path,
 ) -> None:
     if not _as_bool(request.config.get("generate_visibility"), False):
         return
 
-    visibility_config = _build_visibility_config(
+    # 1. Primary Targets -> data/targets
+    primary_config = _build_visibility_config(
         request,
         paths,
         pandora_start,
         pandora_stop,
-        primary_target_csv,
-        auxiliary_target_csv,
+        target_list=primary_target_csv,
+        partner_list=auxiliary_target_csv,
+        output_subpath="targets",
     )
+    LOGGER.info("Generating visibility for Primary Targets in %s", primary_config.output_root)
+    build_visibility_catalog(primary_config)
 
-    LOGGER.info(
-        "Generating visibility artifacts for %s", visibility_config.target_list.name
+    # 2. Auxiliary Targets -> data/aux_targets
+    aux_config = _build_visibility_config(
+        request,
+        paths,
+        pandora_start,
+        pandora_stop,
+        target_list=auxiliary_target_csv,
+        partner_list=None,
+        output_subpath="aux_targets",
     )
-    build_visibility_catalog(visibility_config)
+    LOGGER.info("Generating visibility for Auxiliary Targets in %s", aux_config.output_root)
+    build_visibility_catalog(aux_config)
+
+    # 3. Occultation Targets -> data/aux_targets
+    occ_config = _build_visibility_config(
+        request,
+        paths,
+        pandora_start,
+        pandora_stop,
+        target_list=occultation_target_csv,
+        partner_list=None,
+        output_subpath="aux_targets",
+    )
+    LOGGER.info("Generating visibility for Occultation Targets in %s", occ_config.output_root)
+    build_visibility_catalog(occ_config)
 
 
 def _generate_target_manifests(
@@ -245,13 +274,19 @@ def _generate_target_manifests(
         destination.parent.mkdir(parents=True, exist_ok=True)
         manifest.to_csv(destination, index=False)
 
+    rework_helper.create_aux_list(
+        target_definition_files,
+        primary_target_csv.parent.parent,
+    )
+
 def _build_visibility_config(
     request: SchedulerRequest,
     paths: SchedulerPaths,
     pandora_start: datetime,
     pandora_stop: datetime,
-    primary_target_csv: Path,
-    auxiliary_target_csv: Path,
+    target_list: Path,
+    partner_list: Optional[Path],
+    output_subpath: str,
 ) -> VisibilityConfig:
     config = request.config
     extra_inputs = request.extra_inputs
@@ -265,31 +300,34 @@ def _build_visibility_config(
 
     target_list_path = extra_inputs.get("visibility_target_list") or _coerce_path(
         config.get("visibility_target_list"),
-        primary_target_csv,
+        target_list,
     )
 
     partner_override = extra_inputs.get("visibility_partner_list")
     partner_value = config.get("visibility_partner_list")
-    partner_list: Optional[Path]
+
     if partner_override is not None:
         partner_list = partner_override
-    elif isinstance(partner_value, bool) and not partner_value:
-        partner_list = None
-    elif partner_value is None:
-        partner_list = auxiliary_target_csv if auxiliary_target_csv.exists() else None
-    else:
-        partner_str = str(partner_value).strip()
-        partner_list = (
-            None
-            if not partner_str
-            else _coerce_path(partner_value, auxiliary_target_csv)
-        )
+    elif partner_value is not None:
+        if isinstance(partner_value, bool) and not partner_value:
+            partner_list = None
+        elif isinstance(partner_value, str) and not partner_value.strip():
+            partner_list = None
+        else:
+            default_partner = partner_list if partner_list is not None else (paths.data_dir / "auxiliary-standard_targets.csv")
+            partner_list = _coerce_path(partner_value, default_partner)
+    # else: use the passed partner_list argument as-is
 
     output_override = extra_inputs.get("visibility_output_root")
     if output_override is not None:
         output_root = output_override
     else:
-        output_root = _coerce_optional_path(config.get("visibility_output_root"))
+        config_root = _coerce_optional_path(config.get("visibility_output_root"))
+        if config_root is not None:
+            output_root = config_root
+        else:
+            # Use request output dir + subpath
+            output_root = request.output_dir / "data" / output_subpath
 
     sun_value = config.get("visibility_sun_deg")
     if sun_value is None:
@@ -308,9 +346,6 @@ def _build_visibility_config(
 
     force_flag = _as_bool(config.get("visibility_force"), False)
     target_filters = _coerce_target_filters(config.get("visibility_target_filters"))
-    prefer_catalog = _as_bool(
-        config.get("visibility_prefer_catalog_coordinates"), False
-    )
 
     return VisibilityConfig(
         window_start=pandora_start,
@@ -324,7 +359,6 @@ def _build_visibility_config(
         earth_avoidance_deg=earth_deg,
         force=force_flag,
         target_filters=target_filters,
-        prefer_catalog_coordinates=prefer_catalog,
     )
 
 
