@@ -32,7 +32,7 @@ schedule_path = os.path.join(
 tar_vis_path = os.path.join(DATA_DIR, "targets")
 aux_vis_path = os.path.join(DATA_DIR, "aux_targets")
 tar_path = os.path.join(DATA_DIR, "exoplanet_targets.csv")
-aux_path = os.path.join(DATA_DIR, "all_targets.csv")
+aux_path = os.path.join(DATA_DIR, "aux_list_new.csv")
 occ_path = os.path.join(DATA_DIR, "occultation-standard_targets.csv")
 
 a_list = pd.read_csv(aux_path)
@@ -142,7 +142,9 @@ for i in tqdm(range(len(sch))):
         tv_st = Time(tv_data['Transit_Start'], format='mjd', scale='utc').to_value('datetime')
         tv_sp = Time(tv_data['Transit_Stop'], format='mjd', scale='utc').to_value('datetime')
     elif not exoplanet_tdf and t_name != 'Free Time' and not t_name.startswith(('WARNING')):
-        v_data = pd.read_csv(aux_vis_path + f'{st_name}/Visibility for {t_name}.csv')
+        v_data = pd.read_csv(
+            os.path.join(aux_vis_path, st_name, f"Visibility for {t_name}.csv")
+        )
         tmp_idx = a_list.index[(a_list['Star Name'] == t_name)].tolist()
         if len(tmp_idx) == 1:
             targ_info = pd.DataFrame(a_list.loc[tmp_idx[0]]).T
