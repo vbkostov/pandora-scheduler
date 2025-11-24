@@ -642,10 +642,10 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
 
     obs_rng = pd.date_range(start, stop, freq = "min")
 
-    obs_std_dur = timedelta(hours = 2) 
+    obs_std_dur = timedelta(hours = 0.5) 
 
     # Add standard stars!
-    if (start - last_std_obs > timedelta(days = 7.)) and ((start + obs_std_dur) < stop):
+    if (start - last_std_obs > timedelta(days = 3.)) and ((start + obs_std_dur) < stop):
 
         std_fn = f"{PACKAGEDIR}/data/monitoring-standard_targets.csv"
         std_targs = pd.read_csv(std_fn).reset_index(drop=True)
