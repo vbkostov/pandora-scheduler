@@ -9,9 +9,9 @@ import logging
 import transits
 from tqdm import tqdm
 import helper_codes
-import json
 from multiprocessing import Pool
 from functools import partial
+from typing import Optional
 
 import warnings
 from erfa import ErfaWarning
@@ -19,8 +19,10 @@ from erfa import ErfaWarning
 # Suppress only ERFA warnings
 warnings.filterwarnings('ignore', category=ErfaWarning)
 
-# from . import PACKAGEDIR
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
+OUTPUT_DIR = os.path.join(PACKAGEDIR, "data", "baseline")
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 def Schedule(
     pandora_start: str,
@@ -1103,9 +1105,11 @@ if __name__ == "__main__":
     gmat_file = 'Pandora-600km-withoutdrag-20251018.txt'#'GMAT_pandora_600_20250708_withdrag.txt'#'GMAT_pandora_600_20250706_withdrag.txt'#'GMAT_pandora_600_20240512.txt'#'GMAT_pandora_450_20230713.csv'#
     obs_name = 'Pandora'#_600km_20240518'#'Pandora_450km_20230713'#
 
-    update_target_list_as_per_json_files = True
+    output_dir = OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+
+        update_target_list_as_per_json_files = True
     if update_target_list_as_per_json_files:
-        # target_definition_files = ['exoplanet', 'auxiliary-exoplanet', 'auxiliary-standard', 'monitoring-standard', 'secondary-exoplanet', 'occultation-standard']
         target_definition_files = ['exoplanet', 'auxiliary-standard', 'monitoring-standard', 'occultation-standard']
 
         for keyword_ in target_definition_files:
@@ -1113,61 +1117,34 @@ if __name__ == "__main__":
             if os.path.exists(fn_tmp):
                     continue
             else:
-                updated_targ_list_df = helper_codes.process_target_files(keyword_)#; print(updated_targ_list[updated_targ_list.columns[:10]].head())
-                # save_df_as_csv = True
-                # if save_df_as_csv:
+                updated_targ_list_df = helper_codes.process_target_files(keyword_)
                 updated_targ_list_df.to_csv(fn_tmp, index=False)
 
-        # primary_targ_list = f"{PACKAGEDIR}/data/primary-exoplanet_targets.csv"
         primary_targ_list = f"{PACKAGEDIR}/data/{target_definition_files[0]}_targets.csv"
         aux_targ_list = f"{PACKAGEDIR}/data/occultation-standard_targets.csv"
+    fname_tracker = os.path.join(output_dir, f"Tracker_{pandora_start[0:10]}_to_{pandora_stop[0:10]}.pkl")
 
-        # occ_std_df = helper_codes.process_target_files(target_definition_files[3])
-        # occ_std_df.to_csv(f"{PACKAGEDIR}/data/aux_list_new.csv", index=False)
-
-    # print(updated_targ_list)
-    fname_tracker = f"{PACKAGEDIR}/data/Tracker_{pandora_start[0:10]}_to_{pandora_stop[0:10]}.pkl"#f"{PACKAGEDIR}/data/Tracker_" + target_list_name + ".pkl"
-
-    # create aux_list_new
     if not os.path.exists(f"{PACKAGEDIR}/data/all_targets.csv"):
         create_aux_list = helper_codes.create_aux_list(target_definition_files, PACKAGEDIR)
 
     aux_key = 'sort_by_tdf_priority'
-    # aux_key = None
 
-    run_ = 'vis_and_schedule'#'schedule_only'#'target_visibility'#
+    run_ = 'vis_and_schedule'
 
     if run_ == 'schedule_only':
         Schedule(pandora_start, pandora_stop, primary_targ_list, obs_window, transit_coverage_min, sched_wts, min_visibility, deprioritization_limit, \
             aux_key = aux_key, aux_list=aux_targ_list, fname_tracker = fname_tracker, commissioning_time = commissioning_time_, \
-                sched_start = sched_start, sched_stop = sched_stop)
+                sched_start = sched_start, sched_stop = sched_stop, output_dir=output_dir)
     elif run_ == 'target_visibility':
         for tt in target_definition_files[0:5]:
-            if 'exoplanet' in tt:# in ('exoplanet', 'auxiliary-exoplanet', 'primary-exoplanet', 'secondary-exoplanet'):
+            if 'exoplanet' in tt:
                 save_path_ = f'{PACKAGEDIR}/data/targets/'
             else:
                 save_path_ = f'{PACKAGEDIR}/data/aux_targets/'
             transits.star_vis(blocks[0], blocks[1], blocks[2], pandora_start, pandora_stop, gmat_file, obs_name, \
                 save_pth = save_path_, targ_list = f'{PACKAGEDIR}/data/{tt}_targets.csv')
-        # save_pth = f'{PACKAGEDIR}/data/aux_targets/', targ_list = f'{PACKAGEDIR}/data/{target_definition_files[1]}_targets.csv')
     elif run_ == 'vis_and_schedule':
             Schedule_all_scratch(blocks, pandora_start, pandora_stop, primary_targ_list, aux_targ_list, target_definition_files, \
                 obs_window, transit_coverage_min, sched_wts = sched_wts, aux_key=aux_key, \
                     fname_tracker = fname_tracker, commissioning_time=commissioning_time_, \
-                        sched_start = sched_start, sched_stop = sched_stop)
-            # aux_key='closest', aux_list=f"{PACKAGEDIR}/data/aux_list.csv", commissioning_time=30)
-
-    # Schedule_all_scratch(blocks, pandora_start, pandora_stop, target_definition_files, \
-    #     #updated_targ_list, target_partner_list, \
-    #     obs_window, transit_coverage_min, sched_wts = sched_wts, aux_key='max_visibility_any', \
-    #         # aux_list=f"{PACKAGEDIR}/data/aux_list_new.csv", 
-    #         fname_tracker = fname_tracker, commissioning_time=commissioning_time_, \
-    #             sched_start = sched_start, sched_stop = sched_stop)
-    #         # aux_key='closest', aux_list=f"{PACKAGEDIR}/data/aux_list.csv", commissioning_time=30)
-    #
-    # transits.star_vis(blocks[0], blocks[1], blocks[2], pandora_start, pandora_stop, gmat_file, obs_name, \
-    #     # save_pth = f'{PACKAGEDIR}/data/aux_targets/', targ_list = f"{PACKAGEDIR}/data/aux_list_new.csv")
-    #     # save_pth = f'{PACKAGEDIR}/data/aux_targets/', targ_list = f'{PACKAGEDIR}/data/{target_definition_files[4]}_targets.csv')
-    #     save_pth = f'{PACKAGEDIR}/data/targets/', targ_list = f'{PACKAGEDIR}/data/{target_definition_files[0]}_targets.csv')
-    # #                  
-    #
+                        sched_start = sched_start, sched_stop = sched_stop, output_dir=output_dir)
