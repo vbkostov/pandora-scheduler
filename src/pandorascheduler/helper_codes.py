@@ -11,6 +11,7 @@ import logging
 import requests
 from multiprocessing import Pool
 from functools import partial
+from typing import Iterable, List, Sequence, Tuple
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(PACKAGEDIR, "..", ".."))

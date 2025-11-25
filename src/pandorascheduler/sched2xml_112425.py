@@ -16,12 +16,12 @@ from tqdm import tqdm
 import warnings
 
 import helper_codes
-import helper_codes_aux as hcc
+# import helper_codes_aux as hcc
 
 warnings.filterwarnings("ignore")
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
-schedule_path = f'{PACKAGEDIR}/data/Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-03-05.csv'
+# schedule_path = f'{PACKAGEDIR}/data/Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-03-05.csv'
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def sch_occ_new(starts, stops, visit_start, visit_stop, list_path, sort_key=None
 
 #max time for an observation sequence
 obs_sequence_duration = 90 # minutes
-occ_sequence_limit = 90 # minutes
+occ_sequence_limit = 30 # minutes
 obs_seq_duration, occ_seq_limit = helper_codes.general_parameters(obs_sequence_duration, occ_sequence_limit)
 dt = timedelta(minutes = obs_seq_duration)
 occultation_sequence_limit = timedelta(minutes = occ_seq_limit + 1.)
@@ -101,13 +101,13 @@ meta=ET.SubElement(cal, 'Meta',
                    Keepout_Angles='91.0, 25.0, 63.0',
                    Observation_Sequence_Duration_hrs_max = f'{dt}',
                    Removed_Sequences_Shorter_Than_min = f'{too_short_sequences}',
-                   Created=f'{str(hcc.round_to_nearest_second(datetime.now()))}',
+                   Created=f'{str(helper_codes.round_to_nearest_second(datetime.now()))}',
                    Delivery_Id='',
                    )
 #
 #
 #
-for i in tqdm(range(44)):#len(sch))):
+for i in tqdm(range(43,44)):#len(sch))):
 
     t_name = sch['Target'][i]
 
@@ -174,10 +174,10 @@ for i in tqdm(range(44)):#len(sch))):
             continue
     v_time_all = Time(v_data["Time(MJD_UTC)"], format="mjd", scale="utc").to_value("datetime")
     v_time = v_time_all[(v_time_all >= start) & (v_time_all <= stop)]
-    v_time = np.vectorize(hcc.round_to_nearest_second)(v_time)
+    v_time = np.vectorize(helper_codes.round_to_nearest_second)(v_time)
     v_flag = np.asarray(v_data['Visible'])[(v_time_all >= start) & (v_time_all <= stop)]
 
-    v_flag, _ = hcc.remove_short_sequences(v_flag, too_short_sequences)
+    v_flag, _ = helper_codes.remove_short_sequences(v_flag, too_short_sequences)
 
     #figure out where the visibility changes (gives final element where the visibility is the same)
     v_change = np.where(v_flag[:-1] != v_flag[1:])[0]
