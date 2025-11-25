@@ -21,7 +21,7 @@ import helper_codes_aux as hcc
 warnings.filterwarnings("ignore")
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
-schedule_path = f'{PACKAGEDIR}/data/Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-03-05.csv'#Pandora_Schedule_2026-02-05_to_2027-02-05_111825.csv'#Pandora_Schedule_2025-08-04_to_2026-08-03_last.csv'#Pandora_Schedule_2025-08-04_3months_29Aug2024.csv'#Pandora_Schedule_2025-08-04_2months.csv'#Pandora_Schedule_2025-08-04.csv'
+schedule_path = f'{PACKAGEDIR}/data/Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-03-05.csv'
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,12 @@ PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(PACKAGEDIR, "data")
 
 schedule_path = os.path.join(
-    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05.csv"
+    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-05-05.csv"
 )
 tar_vis_path = os.path.join(DATA_DIR, "targets")
 aux_vis_path = os.path.join(DATA_DIR, "aux_targets")
 tar_path = os.path.join(DATA_DIR, "exoplanet_targets.csv")
-aux_path = os.path.join(DATA_DIR, "aux_list_new.csv")
+aux_path = os.path.join(DATA_DIR, "all_targets.csv")
 occ_path = os.path.join(DATA_DIR, "occultation-standard_targets.csv")
 
 a_list = pd.read_csv(aux_path)
@@ -83,11 +83,9 @@ def sch_occ_new(starts, stops, visit_start, visit_stop, list_path, sort_key=None
 
     return o_df, d_flag
 
-
-
 #max time for an observation sequence
 obs_sequence_duration = 90 # minutes
-occ_sequence_limit = 30 # minutes
+occ_sequence_limit = 90 # minutes
 obs_seq_duration, occ_seq_limit = helper_codes.general_parameters(obs_sequence_duration, occ_sequence_limit)
 dt = timedelta(minutes = obs_seq_duration)
 occultation_sequence_limit = timedelta(minutes = occ_seq_limit + 1.)
@@ -109,9 +107,7 @@ meta=ET.SubElement(cal, 'Meta',
 #
 #
 #
-for i in tqdm(range(len(sch))):#, position = 0, leave = True):#len(sch))):#3)):#len(18,19)):#
-
-for i in tqdm(range(len(sch))):
+for i in tqdm(range(44)):#len(sch))):
 
     t_name = sch['Target'][i]
 
