@@ -1531,3 +1531,33 @@ def check_visibility():
     plt.subplots_adjust(hspace=0.1) 
     plt.show()
 
+def round_to_nearest_second(timestamp: datetime) -> datetime:
+    """Return ``timestamp`` rounded to the nearest second."""
+
+    if timestamp.microsecond >= 500_000:
+        return timestamp + timedelta(seconds=1) - timedelta(microseconds=timestamp.microsecond)
+    return timestamp - timedelta(microseconds=timestamp.microsecond)
+
+def remove_short_sequences(array: Sequence[float], sequence_too_short: int):
+    """Zero-out runs of ones shorter than ``sequence_too_short`` and report their spans."""
+
+    cleaned = np.asarray(array).copy()
+    start_index = None
+    positions: List[Tuple[int, int]] = []
+
+    for idx, value in enumerate(cleaned):
+        if value == 1 and start_index is None:
+            start_index = idx
+        elif value == 0 and start_index is not None:
+            if idx - start_index < sequence_too_short:
+                positions.append((start_index, idx - 1))
+            start_index = None
+
+    if start_index is not None and len(cleaned) - start_index < sequence_too_short:
+        positions.append((start_index, len(cleaned) - 1))
+
+    for start_idx, stop_idx in positions:
+        cleaned[start_idx : stop_idx + 1] = 0.0
+
+    return cleaned, positions
+
