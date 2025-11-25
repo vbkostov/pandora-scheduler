@@ -376,6 +376,8 @@ def _build_config(values: Dict[str, object]) -> SchedulerConfig:
     commissioning_days = _as_int(values.get("commissioning_days"), 0)
     aux_key_value = values.get("aux_key", "sort_by_tdf_priority")
     show_progress = _as_bool(values.get("show_progress"), False)
+    std_obs_duration_hours = _as_float(values.get("std_obs_duration_hours"), 0.5)
+    std_obs_frequency_days = _as_float(values.get("std_obs_frequency_days"), 3.0)
     if isinstance(aux_key_value, str) and aux_key_value.lower() == "none":
         aux_key = None
     elif aux_key_value is None:
@@ -394,6 +396,8 @@ def _build_config(values: Dict[str, object]) -> SchedulerConfig:
         commissioning_days=commissioning_days,
         aux_key=aux_key,
         show_progress=show_progress,
+        std_obs_duration_hours=std_obs_duration_hours,
+        std_obs_frequency_days=std_obs_frequency_days,
     )
 
 

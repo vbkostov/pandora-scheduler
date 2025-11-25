@@ -23,48 +23,92 @@ The **Pandora Scheduler Rework** is a clean-room reimplementation of NASA's Pand
 
 ---
 
-## Project Structure
+## Codebase Analysis: Pandora Scheduler Rework
 
+## Executive Summary
+
+The `pandorascheduler_rework` is a modernized, type-safe, and modular reimplementation of the legacy Pandora scheduler. It achieves full functional parity with the legacy system while eliminating technical debt, improving maintainability, and removing direct code dependencies on the legacy package.
+
+**Key Achievements:**
+*   **Independence:** The rework package (`src/pandorascheduler_rework`) does not import any code from the legacy package (`src/pandorascheduler`). It only references the legacy directory to locate shared data files.
+*   **Modularity:** Monolithic scripts have been broken down into focused modules (`pipeline`, `scheduler`, `visibility`, `targets`).
+*   **Type Safety:** The codebase is fully typed with Python type hints, enabling static analysis and better IDE support.
+*   **Performance:** Critical paths (visibility filtering, transit calculation) have been optimized using vectorized operations (NumPy/Pandas).
+
+## Architecture
+
+The system follows a linear pipeline architecture:
+
+```mermaid
+graph TD
+    A[Target Definitions (JSON)] -->|targets/manifest.py| B[Target Manifests (CSV)]
+    B -->|visibility/catalog.py| C[Visibility Data (CSV)]
+    C -->|scheduler.py| D[Schedule (CSV)]
+    D -->|science_calendar.py| E[Science Calendar (XML)]
+    
+    subgraph "Data Layer"
+    B
+    C
+    end
+    
+    subgraph "Core Logic"
+    A
+    D
+    E
+    end
 ```
-pandora-scheduler-rework/
-├── src/
-│   ├── pandorascheduler/          # Legacy scheduler (untouched, for regression)
-│   └── pandorascheduler_rework/   # New implementation
-│       ├── visibility/            # Visibility calculation pipeline
-│       ├── targets/               # Target manifest generation
-│       ├── utils/                 # Utility modules (time, calendar_diff)
-│       ├── scheduler.py           # Core scheduling logic
-│       ├── science_calendar.py    # Science calendar XML generation
-│       ├── observation_utils.py   # Observation scheduling utilities
-│       └── pipeline.py            # High-level orchestration
-├── scripts/                       # CLI tools and comparison utilities
-├── tests/                         # Test suite
-├── docs/                          # Documentation and planning
-└── comparison_outputs/            # Test fixtures and validation data
-```
 
----
+## Key Components
 
-## Architecture Overview
+### 1. Pipeline Orchestration (`pipeline.py`)
+The entry point for the system. It handles:
+*   **Configuration:** Parsing command-line arguments and config files into typed dataclasses (`SchedulerRequest`, `SchedulerConfig`).
+*   **Orchestration:** Calling the target manifest generator, visibility builder, and scheduler in the correct order.
+*   **Hermeticity:** Ensuring all inputs are explicitly defined, reducing reliance on implicit global state.
 
-### Design Philosophy
+### 2. Core Scheduler (`scheduler.py`)
+The heart of the optimization loop. It mirrors the legacy `Schedule` function but with significant improvements:
+*   **State Management:** Uses a `SchedulerState` dataclass to track the schedule's evolution, replacing loose variables.
+*   **Vectorization:** Transit filtering and overlap calculations are vectorized for speed.
+*   **Logic Separation:** The scheduling loop is cleaner, with helper functions for specific tasks like ToO handling and auxiliary target selection.
 
-The rework follows a **dual-track approach**:
-1. **Legacy preservation** - Original `pandorascheduler` remains untouched for regression testing
-2. **Modern reimplementation** - `pandorascheduler_rework` provides clean, typed interfaces
+### 3. Visibility Generation (`visibility/`)
+A dedicated package for calculating target visibility:
+*   **`catalog.py`**: The main driver. It iterates through targets, calculates visibility windows, and generates the CSV files.
+*   **`geometry.py`**: Handles the geometric calculations (Sun/Moon/Earth avoidance, SAA crossings).
+*   **`config.py`**: Defines the configuration for visibility runs.
+*   **No Simbad:** Strictly relies on catalog coordinates, raising errors for missing data to ensure reproducibility.
 
-This allows continuous validation via the **golden rule**:
-> Every meaningful change must be validated against the legacy scheduler via `poetry run python scripts/run_schedule_comparison.py`
+### 4. Target Management (`targets/manifest.py`)
+Responsible for converting the complex JSON target definitions into flat CSV manifests used by the scheduler.
+*   **Abstraction:** Decouples the scheduler from the specific layout of the `PandoraTargetList` repository.
+*   **Normalization:** Handles legacy quirks (like planet name formatting) to ensure consistent identifiers.
 
-### Core Components
+### 5. Science Calendar (`science_calendar.py`)
+Generates the final XML output for the spacecraft.
+*   **XML Generation:** Uses `xml.etree.ElementTree` to build the XML structure programmatically.
+*   **Validation:** Ensures that the generated XML adheres to the schema (implicitly, by structure).
+*   **Clean Implementation:** A complete rewrite of the legacy `xml_builder.py` / `sched2xml` logic.
 
-#### 1. **Visibility Pipeline** (`pandorascheduler_rework/visibility/`)
-Generates target visibility windows based on orbital mechanics and mission constraints.
+### 6. Observation Utilities (`observation_utils.py`)
+A collection of shared helper functions.
+*   **Legacy Parity:** Reimplements specific legacy behaviors (like `remove_short_sequences`) to ensure output parity.
+*   **Shared Logic:** Centralizes logic used by both the scheduler and the XML builder.
 
-**Modules:**
-- `geometry.py` - Vector math & interpolation utilities
-- `catalog.py` - Public API for generating visibility artifacts
-- `serializers.py` - File-writing helpers
+## Data Flow & Legacy Integration
+
+The rework coexists with the legacy system by sharing the **Data Layer**:
+
+1.  **Input Data:** Both systems read from `src/pandorascheduler/data/`.
+2.  **Output Data:** The rework writes to a specified output directory, but mimics the directory structure of the legacy system (e.g., `targets/StarName/PlanetName/Visibility...`) to ensure downstream tools can process the results.
+3.  **Independence:** The rework code *never* imports from `src/pandorascheduler`. This means the legacy code can eventually be deleted without breaking the rework (once the data directory is moved or redefined).
+
+## Future Recommendations
+
+1.  **Data Directory Migration:** Move the `data/` directory out of `src/pandorascheduler` to a top-level `data/` or `assets/` directory. This will sever the final link to the legacy package structure.
+2.  **Legacy Removal:** Once the data directory is moved, the `src/pandorascheduler` directory can be archived or deleted.
+3.  **Unit Test Coverage:** While high-level parity tests exist, more granular unit tests for `scheduler.py` logic would be beneficial.
+4.  **Performance Profiling:** Continue to profile the visibility generation, as it remains the most compute-intensive part of the pipeline.
 - `config.py` - Configuration dataclasses
 - `diff.py` - Comparison utilities for validation
 

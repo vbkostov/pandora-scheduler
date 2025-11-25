@@ -108,7 +108,6 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
         moon_avoidance_deg=30.0,
         earth_avoidance_deg=20.0,
         force=True,
-        prefer_catalog_coordinates=True,
     )
 
     build_visibility_catalog(config)
@@ -201,101 +200,62 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
         assert np.isclose(row["SAA_Overlap"], expected_saa)
 
 
-def test_resolve_star_coord_prefers_simbad_lookup(monkeypatch):
+def test_resolve_star_coord_uses_catalog_coordinates():
+    """Test that _resolve_star_coord uses catalog coordinates (no Simbad)."""
     from pandorascheduler_rework.visibility import catalog
-
-    sentinel = SkyCoord(ra=1.0 * u.deg, dec=2.0 * u.deg, frame="icrs")
-    recorded: dict[str, str] = {}
-
-    def fake_from_name(name: str) -> SkyCoord:
-        recorded["name"] = name
-        return sentinel
-
-    monkeypatch.setattr(
-        "pandorascheduler_rework.visibility.catalog.SkyCoord.from_name",
-        fake_from_name,
-    )
 
     row = pd.Series(
         {
             "Star Name": "Foo",
-            "Star Simbad Name": "Foo SIMBAD",
             "RA": 123.4,
             "DEC": 56.7,
         }
     )
     metadata = {"Foo": (123.4, 56.7)}
 
-    coord = catalog._resolve_star_coord(
-        row,
-        metadata,
-        prefer_catalog_coordinates=False,
-    )
+    coord = catalog._resolve_star_coord(row, metadata)
 
-    assert coord is sentinel
-    assert recorded["name"] == catalog._normalize_simbad_name("Foo SIMBAD")
+    assert np.isclose(coord.ra.deg, 123.4)
+    assert np.isclose(coord.dec.deg, 56.7)
 
 
-def test_resolve_star_coord_uses_catalog_when_preferring_manifest(monkeypatch):
+
+def test_resolve_star_coord_uses_metadata_fallback():
+    """Test that _resolve_star_coord uses metadata as fallback."""
     from pandorascheduler_rework.visibility import catalog
-
-    def fail_from_name(_name: str) -> SkyCoord:
-        raise AssertionError("from_name should not be called")
-
-    monkeypatch.setattr(
-        "pandorascheduler_rework.visibility.catalog.SkyCoord.from_name",
-        fail_from_name,
-    )
 
     row = pd.Series(
         {
             "Star Name": "Bar",
-            "Star Simbad Name": "Bar SIMBAD",
-            "RA": 10.0,
-            "DEC": -11.0,
+            "RA": np.nan,  # Missing in row
+            "DEC": np.nan,  # Missing in row
         }
     )
     metadata = {"Bar": (10.0, -11.0)}
 
-    coord = catalog._resolve_star_coord(
-        row,
-        metadata,
-        prefer_catalog_coordinates=True,
-    )
+    coord = catalog._resolve_star_coord(row, metadata)
 
     assert coord.ra.deg == 10.0
     assert coord.dec.deg == -11.0
 
 
-def test_resolve_star_coord_falls_back_to_catalog_when_simbad_missing(monkeypatch):
+
+def test_resolve_star_coord_raises_error_when_missing():
+    """Test that _resolve_star_coord raises error when coordinates missing."""
     from pandorascheduler_rework.visibility import catalog
-
-    def missing_from_name(_name: str) -> SkyCoord:
-        raise ValueError("not found")
-
-    monkeypatch.setattr(
-        "pandorascheduler_rework.visibility.catalog.SkyCoord.from_name",
-        missing_from_name,
-    )
+    import pytest
 
     row = pd.Series(
         {
             "Star Name": "Baz",
-            "Star Simbad Name": "Baz SIMBAD",
-            "RA": 20.0,
-            "DEC": -21.0,
+            "RA": np.nan,
+            "DEC": np.nan,
         }
     )
-    metadata = {"Baz": (20.0, -21.0)}
+    metadata = {}  # No fallback
 
-    coord = catalog._resolve_star_coord(
-        row,
-        metadata,
-        prefer_catalog_coordinates=False,
-    )
-
-    assert np.isclose(coord.ra.deg, 20.0)
-    assert np.isclose(coord.dec.deg, -21.0)
+    with pytest.raises(RuntimeError, match="No coordinates found in catalog for Baz"):
+        catalog._resolve_star_coord(row, metadata)
 
 
 def _write_csv(path: Path, content: str) -> None:

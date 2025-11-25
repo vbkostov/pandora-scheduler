@@ -48,7 +48,7 @@ class ScienceCalendarInputs:
 class ScienceCalendarConfig:
     """Tunable knobs mirroring the legacy script defaults."""
 
-    visit_limit: Optional[int] = 10
+    visit_limit: Optional[int] = None
     obs_sequence_duration_min: int = 90
     occ_sequence_limit_min: int = 30
     min_sequence_minutes: int = 5
@@ -153,24 +153,26 @@ class _ScienceCalendarBuilder:
         ET.SubElement(root, "Meta", attrib=attrs)
 
     def _add_visit(self, root: ET.Element, visit_counter: int, row: pd.Series) -> None:
+        id_padding = 4 - len(str(visit_counter))
         target_label = str(row.get("Target", ""))
-
-        visit_element = ET.SubElement(root, "Visit")
-        id_padding = max(0, 4 - len(str(visit_counter - 1)))
-        ET.SubElement(visit_element, "ID").text = f"{'0' * id_padding}{visit_counter}"
 
         if not target_label or target_label == "Free Time":
             return
+
         if target_label.startswith("WARNING"):
             LOGGER.warning("Need visible STD during %s", target_label)
             return
+
+        target_name, star_name = _normalise_target_name(target_label)
+        
+        visit_element = ET.SubElement(root, "Visit")
+        ET.SubElement(visit_element, "ID").text = f"{'0' * id_padding}{visit_counter}"
 
         start = _parse_datetime(row.get("Observation Start"))
         stop = _parse_datetime(row.get("Observation Stop"))
         if start is None or stop is None:
             raise ValueError(f"Unable to parse observation window for {target_label}")
 
-        target_name, star_name = _normalise_target_name(target_label)
         planet_row = _lookup_planet_row(self.target_catalog, target_name)
         has_transit = _is_transit_entry(row)
 
@@ -437,7 +439,7 @@ def _normalise_target_name(target: str) -> tuple[str, str]:
         stripped = target[:-4]
         return stripped, stripped
     if target.endswith(tuple("bcdef")) and target != "EV_Lac":
-        return target, target[:-2]
+        return target, target[:-1]
     return target, target
 
 
@@ -513,7 +515,10 @@ def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     if not path.exists():
         LOGGER.debug("Visibility file missing for %s", name)
         return None
-    return pd.read_csv(path)
+    df = pd.read_csv(path)
+    if df.empty:
+        LOGGER.debug("DF is empty for %s", name)
+    return df
 
 
 def _read_planet_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:

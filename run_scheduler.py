@@ -48,7 +48,9 @@ Example config.json:
     "deprioritization_limit_hours": 48.0,
     "commissioning_days": 0,
     "aux_key": "sort_by_tdf_priority",
-    "show_progress": true
+    "show_progress": true,
+    "std_obs_duration_hours": 0.5,
+    "std_obs_frequency_days": 3.0
 }
 """
 
@@ -254,6 +256,11 @@ def build_config_dict(args: argparse.Namespace, base_config: Dict, logger: loggi
     # Visibility generation
     if args.generate_visibility:
         config["generate_visibility"] = True
+        # # Set output_root for visibility if not provided in config
+        # if "visibility_output_root" not in config:
+        #     config["visibility_output_root"] = args.output / "data" / "targets"
+        #     logger.info(f"Visibility output root set to default: {config['visibility_output_root']}")
+
         config["visibility_sun_deg"] = args.sun_avoidance
         config["visibility_moon_deg"] = args.moon_avoidance
         config["visibility_earth_deg"] = args.earth_avoidance
@@ -275,6 +282,7 @@ def generate_science_calendar(
     output_dir: Path,
     data_dir: Path,
     logger: logging.Logger,
+    config: Optional[object] = None,
 ) -> Path:
     """Generate science calendar XML from schedule CSV."""
     logger.info("Generating science calendar XML...")
@@ -289,6 +297,7 @@ def generate_science_calendar(
     science_calendar.generate_science_calendar(
         inputs,
         output_path=output_path,
+        config=config,
     )
 
     logger.info(f"Science calendar written to: {output_path}")
@@ -414,12 +423,24 @@ def main() -> int:
         # Generate science calendar XML (unless skipped)
         xml_path = None
         if not args.skip_xml and result.schedule_csv:
-            data_dir = package_dir / "data"
+            # Use output data directory if it exists, otherwise fallback to source
+            sc_data_dir = args.output / "data"
+            if not sc_data_dir.exists():
+                sc_data_dir = data_dir
+
+            # Create config for science calendar generation
+            from pandorascheduler_rework.science_calendar import ScienceCalendarConfig
+            sc_config = ScienceCalendarConfig(
+                visit_limit=None,
+                prioritise_occultations_by_slew=False,
+            )
+
             xml_path = generate_science_calendar(
                 result.schedule_csv,
                 args.output,
-                data_dir,
+                sc_data_dir,
                 logger,
+                config=sc_config,
             )
 
         # Print summary

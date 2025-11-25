@@ -23,7 +23,6 @@ class VisibilityConfig:
     earth_avoidance_deg: float = 86.0
     force: bool = False
     target_filters: Sequence[str] = field(default_factory=tuple)
-    prefer_catalog_coordinates: bool = False
 
     def resolve_output_root(self, package_root: Path) -> Path:
         """Resolve the output directory, defaulting to the legacy layout."""

@@ -483,8 +483,10 @@ def Transit_overlap(target_list:str, partner_list:str, star_name:str):
                             pset = set(partner_rng)
                             tset = set(transit_rng)
                             overlap_times = pset.intersection(tset)
-                            transit_overlap = len(overlap_times)/len(transit_rng)
-                            overlap.loc[n, 'Transit_Overlap'] = np.min((transit_overlap, 1.0))
+                            transit_overlap += len(overlap_times)/len(transit_rng)
+                            current_overlap = overlap.loc[n, 'Transit_Overlap']
+                            new_overlap = np.min((transit_overlap, 1.0))
+                            overlap.loc[n, 'Transit_Overlap'] = np.max((current_overlap, new_overlap))
                        
     ###         Update pandas dataframe and save csv
             if 'Transit_Overlap' in planet_data:

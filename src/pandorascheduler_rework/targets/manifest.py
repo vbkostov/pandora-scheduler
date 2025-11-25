@@ -32,9 +32,9 @@ _EXOPLANET_CATEGORIES = {
     "primary-exoplanet",
     "secondary-exoplanet",
 }
-_STANDARD_CATEGORIES = {"auxiliary-standard", "monitoring-standard"}
+_STANDARD_CATEGORIES = {"auxiliary-standard", "monitoring-standard", "occultation-standard"}
 _OCCULTATION_CATEGORY = "occultation-standard"
-_DEFAULT_OBSERVATION_EPOCH = Time("2025-11-15")
+_DEFAULT_OBSERVATION_EPOCH = Time("2026-01-05")
 
 
 class TargetDefinitionError(RuntimeError):
@@ -67,7 +67,7 @@ def build_target_manifest(
         JSON files.
     observation_epoch
         Epoch at which proper motion should be applied when propagating
-        coordinates. Defaults to 2025-11-15 to match the legacy scheduler.
+        coordinates. Defaults to 2026-01-05 to match the legacy scheduler.
     """
 
     category = category.strip()
@@ -228,11 +228,11 @@ def _apply_priority(
                 f"Target '{filename}' not present in {category} priority table"
             )
         row["Priority"] = float(match["priority"].iloc[0])
-        row["Number of Hours Requested"] = int(
-            round(float(match["hours_req"].iloc[0]))
-        )
-    elif category == _OCCULTATION_CATEGORY:
-        row.setdefault("Priority", 0.1)
+        # Only add Number of Hours Requested for non-occultation standard categories
+        if category != _OCCULTATION_CATEGORY:
+            row["Number of Hours Requested"] = int(
+                round(float(match["hours_req"].iloc[0]))
+            )
     else:
         raise TargetDefinitionError(f"Unsupported target category '{category}'")
 
@@ -264,10 +264,8 @@ def _apply_identity_columns(row: MutableMapping[str, object], category: str) -> 
 
 
 def _format_planet_name(name: str) -> str:
-    if not name:
-        return name
-    # Insert a space before the trailing lowercase planet letter if absent.
-    return re.sub(r"(?<!\s)([a-z])$", r" \1", name)
+    """Return planet name as-is (legacy doesn't modify planet names)."""
+    return name
 
 
 def _apply_readout_settings(
