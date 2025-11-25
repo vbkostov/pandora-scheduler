@@ -5,7 +5,7 @@ import matplotlib.dates as mdates
 from datetime import datetime
 from astropy.time import Time
 import os
-import helper_codes_aux as hcc
+# import helper_codes_aux as hcc
 import tqdm as tqdm
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
