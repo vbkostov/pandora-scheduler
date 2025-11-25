@@ -436,7 +436,7 @@ def Schedule(
                         logger.debug("Daily schedule summary: %s", lines[1])
             # VK END
 
-            if obs_rng[0] < obs_start:
+            if obs_rng[0] < obs_start: # primary target not visible for some time at the start of the visit --> find auxiliary target for that time
                 aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, obs_start, aux_key, \
                     non_primary_obs_time=non_primary_obs_time, \
                         min_visibility = min_visibility, deprioritization_limit = deprioritization_limit, last_std_obs = last_std_obs)
@@ -894,9 +894,9 @@ if __name__ == "__main__":
 
     obs_window = timedelta(hours=24.0)
     pandora_start = "2026-02-05 00:00:00"
-    pandora_stop = "2026-05-05 00:00:00"
+    pandora_stop = "2027-02-05 00:00:00"
     sched_start= "2026-02-05 00:00:00"
-    sched_stop= "2026-05-05 00:00:00"
+    sched_stop= "2027-02-05 00:00:00"
 
     commissioning_time_ = 0  # days
 
