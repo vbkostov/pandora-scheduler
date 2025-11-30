@@ -77,6 +77,10 @@ output_standalone/temp/
 
 # Other large data files
 src/pandorascheduler/data/GMAT_pandora_600_20240512.txt
+src/pandorascheduler/data/Pandora-*.txt
+src/pandorascheduler/data/baseline/
+src/pandorascheduler/data/20*/
+src/pandorascheduler/data/ToO_list.csv
 *.pkl
 *.png
 *.zip
