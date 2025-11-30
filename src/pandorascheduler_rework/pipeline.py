@@ -151,6 +151,7 @@ def build_schedule(request: SchedulerRequest) -> SchedulerResult:
         pandora_stop,
         primary_target_csv,
         auxiliary_target_csv,
+        monitoring_target_csv,
         occultation_target_csv,
     )
 
@@ -202,6 +203,7 @@ def _maybe_generate_visibility(
     pandora_stop: datetime,
     primary_target_csv: Path,
     auxiliary_target_csv: Path,
+    monitoring_target_csv: Path,
     occultation_target_csv: Path,
 ) -> None:
     if not _as_bool(request.config.get("generate_visibility"), False):
@@ -232,6 +234,19 @@ def _maybe_generate_visibility(
     )
     LOGGER.info("Generating visibility for Auxiliary Targets in %s", aux_config.output_root)
     build_visibility_catalog(aux_config)
+
+    # 3. Monitoring Targets -> data/aux_targets
+    mon_config = _build_visibility_config(
+        request,
+        paths,
+        pandora_start,
+        pandora_stop,
+        target_list=monitoring_target_csv,
+        partner_list=None,
+        output_subpath="aux_targets",
+    )
+    LOGGER.info("Generating visibility for Monitoring Targets in %s", mon_config.output_root)
+    build_visibility_catalog(mon_config)
 
     # 3. Occultation Targets -> data/aux_targets
     occ_config = _build_visibility_config(
