@@ -44,8 +44,8 @@ _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 
 def general_parameters(
     obs_sequence_duration: int = 90,
-    occ_sequence_limit: int = 30,
-) -> Tuple[int, int]:
+    occ_sequence_limit: int = 50,
+) -> tuple[timedelta, int]:
     return obs_sequence_duration, occ_sequence_limit
 
 
@@ -393,6 +393,7 @@ def schedule_occultation_targets(
         return data
 
     # PASS 1: Search for a single target that covers ALL intervals
+    # Match Legacy behavior: check visibility for ENTIRE SPAN from starts[0] to stops[-1]
     for v_name in tqdm(v_names, desc=f"{description} (Pass 1)", leave=False):
         vis_data = _get_visibility(v_name)
         if vis_data is None:
@@ -400,29 +401,25 @@ def schedule_occultation_targets(
             
         vis_times, visibility = vis_data
         
-        # Check if visible for ALL intervals
-        all_visible = True
-        for start, stop in zip(starts_array, stops_array):
-            interval_mask = (vis_times >= start) & (vis_times <= stop)
-            if not np.all(visibility[interval_mask] == 1):
-                all_visible = False
-                break
+        # Check if visible for ENTIRE SPAN (Legacy logic)
+        interval_mask = (vis_times >= starts_array[0]) & (vis_times <= stops_array[-1])
+        if not np.all(visibility[interval_mask] == 1):
+            continue  # Not visible for entire span
         
-        if all_visible:
-            # Apply this target to all intervals
-            for idx, start in enumerate(starts_array):
-                schedule.loc[start, "Target"] = v_name
-                schedule.loc[start, "Visibility"] = 1
-                
-                match = o_list.loc[o_list["Star Name"] == v_name]
-                if not match.empty:
-                    match_row = match.iloc[0]
-                    o_df.loc[idx, "Target"] = v_name
-                    o_df.loc[idx, "RA"] = match_row["RA"]
-                    o_df.loc[idx, "DEC"] = match_row["DEC"]
-                    o_df.loc[idx, "Visibility"] = 1
+        # Apply this target to all intervals
+        for idx, start in enumerate(starts_array):
+            schedule.loc[start, "Target"] = v_name
+            schedule.loc[start, "Visibility"] = 1
             
-            return o_df, True
+            match = o_list.loc[o_list["Star Name"] == v_name]
+            if not match.empty:
+                match_row = match.iloc[0]
+                o_df.loc[idx, "Target"] = v_name
+                o_df.loc[idx, "RA"] = match_row["RA"]
+                o_df.loc[idx, "DEC"] = match_row["DEC"]
+                o_df.loc[idx, "Visibility"] = 1
+        
+        return o_df, True
 
     # PASS 2: Fill gaps with multiple targets (Greedy approach)
     for v_name in tqdm(v_names, desc=f"{description} (Pass 2)", leave=False):
@@ -598,6 +595,8 @@ def check_if_transits_in_obs_window(
 
         early_start = stop_series - timedelta(hours=20)
         late_start = start_series - timedelta(hours=4)
+
+        start_rng = pd.date_range(early_start.iloc[0], late_start.iloc[0], freq="min")
 
         try:
             ra_tar = float(row["RA"])

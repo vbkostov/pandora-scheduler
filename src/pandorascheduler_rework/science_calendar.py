@@ -50,7 +50,7 @@ class ScienceCalendarConfig:
 
     visit_limit: Optional[int] = None
     obs_sequence_duration_min: int = 90
-    occ_sequence_limit_min: int = 30
+    occ_sequence_limit_min: int = 50
     min_sequence_minutes: int = 5
     break_occultation_sequences: bool = True
     use_target_list_for_occultations: bool = False
@@ -244,10 +244,7 @@ class _ScienceCalendarBuilder:
         )
         if occultation_info is None:
             LOGGER.warning(
-                "Unable to schedule occultation target for %s between %s and %s",
-                target_name,
-                start,
-                final_time,
+                f"Unable to schedule occultation target for {target_name} between {start} and {final_time}",
             )
             return
 
@@ -303,12 +300,9 @@ class _ScienceCalendarBuilder:
                         if self.config.break_occultation_sequences
                         else segment_stop
                     )
-                    if oc_index >= len(occ_df):
+                    if occ_df is None or oc_index >= len(occ_df):
                         LOGGER.warning(
-                            "Ran out of occultation targets for %s between %s and %s",
-                            target_name,
-                            current,
-                            next_value,
+                            f"Ran out of occultation targets for {target_name} between {current} and {next_value}",
                         )
                         break
 
@@ -403,8 +397,9 @@ class _ScienceCalendarBuilder:
             expanded_stops = list(stops)
 
         candidates: List[Tuple[Path, str, Path]] = [
-            (self.data_dir / "exoplanet_targets.csv", "target list", self.data_dir / "targets"),
             (self.data_dir / "occultation-standard_targets.csv", "occ list", self.data_dir / "aux_targets"),
+            # (self.data_dir / "exoplanet_targets.csv", "target list", self.data_dir / "targets"),
+            # (self.data_dir / "auxiliary_targets.csv", "aux list", self.data_dir / "aux_targets"),
         ]
         if not self.config.use_target_list_for_occultations:
             candidates.reverse()
@@ -447,7 +442,11 @@ def _parse_datetime(value: object) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):
-        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
+        for pattern in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%d %H:%M:%S.%f",
+        ):
             try:
                 return datetime.strptime(value, pattern)
             except ValueError:

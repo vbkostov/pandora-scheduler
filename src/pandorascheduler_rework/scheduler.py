@@ -848,6 +848,7 @@ def _schedule_auxiliary_target(
             stats.last_priority = 0.95 * float(baseline)
 
     result = pd.DataFrame(scheduled_rows, columns=row_columns)
+    # Update all_target_obs_time
     for record in result.to_dict(orient="records"):
         target_label = str(record["Target"])
         if target_label == "Free Time":
@@ -858,7 +859,7 @@ def _schedule_auxiliary_target(
         state.all_target_obs_time[target_label] = (
             state.all_target_obs_time.get(target_label, timedelta()) + duration
         )
-
+    
     return result, log_info
 
 

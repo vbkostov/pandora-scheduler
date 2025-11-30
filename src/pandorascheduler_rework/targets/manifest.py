@@ -106,6 +106,11 @@ def build_target_manifest(
     manifest = pd.DataFrame(rows)
     manifest = _normalise_manifest_columns(manifest, category)
     manifest = _standardise_dtypes(manifest)
+    
+    # Sort all target categories by priority (descending) to match Legacy behavior
+    if "Priority" in manifest.columns:
+        manifest = manifest.sort_values(by="Priority", ascending=False).reset_index(drop=True)
+    
     return manifest
 
 
@@ -113,8 +118,9 @@ def _load_target_definition(path: Path) -> MutableMapping[str, object]:
     with path.open("r", encoding="utf-8") as handle:
         payload: Dict[str, object] = json.load(handle)
 
-    for field in _METADATA_FIELDS:
-        payload.pop(field, None)
+    # Remove unwanted keys to match Legacy behavior
+    for key in ["Time Created", "Version", "Author", "Time Updated"]:
+        payload.pop(key, None)
 
     return _flatten_dict(payload)
 
@@ -167,7 +173,8 @@ def _load_priority_table(
 ) -> pd.DataFrame | None:
     priority_path = category_dir / f"{category}_priorities.csv"
     if not priority_path.is_file():
-        return None
+        # raise an error here. we need these files
+        raise TargetDefinitionError(f"Priority table missing: {priority_path}")
 
     metadata, table = _read_priority_csv(priority_path)
     if table.empty:
