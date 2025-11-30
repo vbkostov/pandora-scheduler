@@ -23,6 +23,7 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
 
     primary_target_csv = (paths.data_dir / "exoplanet_targets.csv").resolve()
     auxiliary_target_csv = (paths.data_dir / "auxiliary-standard_targets.csv").resolve()
+    monitoring_target_csv = (paths.data_dir / "monitoring-standard_targets.csv").resolve()
     occultation_target_csv = (paths.data_dir / "occultation-standard_targets.csv").resolve()
 
     request = SchedulerRequest(
@@ -50,10 +51,11 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
         request.window_end,
         primary_target_csv,
         auxiliary_target_csv,
+        monitoring_target_csv,
         occultation_target_csv,
     )
 
-    assert len(captured_configs) == 3
+    assert len(captured_configs) == 4
     # The first call should be for primary targets
     visibility_cfg = captured_configs[0]
     assert isinstance(visibility_cfg, VisibilityConfig)
@@ -76,6 +78,7 @@ def test_maybe_generate_visibility_skips_without_flag(monkeypatch, tmp_path):
 
     primary_target_csv = (paths.data_dir / "exoplanet_targets.csv").resolve()
     auxiliary_target_csv = (paths.data_dir / "auxiliary-standard_targets.csv").resolve()
+    monitoring_target_csv = (paths.data_dir / "monitoring-standard_targets.csv").resolve()
     occultation_target_csv = (paths.data_dir / "occultation-standard_targets.csv").resolve()
 
     request = SchedulerRequest(
@@ -103,6 +106,7 @@ def test_maybe_generate_visibility_skips_without_flag(monkeypatch, tmp_path):
         request.window_end,
         primary_target_csv,
         auxiliary_target_csv,
+        monitoring_target_csv,
         occultation_target_csv,
     )
 

@@ -86,7 +86,7 @@ def categorize_target(target_name):
 
 def main():
     legacy_xml = Path("src/pandorascheduler/data/Pandora_science_calendar.xml")
-    rework_xml = Path("output_standalone/data/Pandora_science_calendar.xml")
+    rework_xml = Path("output_standalone/Pandora_science_calendar.xml")
     
     print("=" * 100)
     print("COMPREHENSIVE XML COMPARISON ANALYSIS")

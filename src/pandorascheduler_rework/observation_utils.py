@@ -269,7 +269,8 @@ def _populate_vda_parameters(payload_parameters, targ_info: pd.DataFrame, diff_i
         if column_name == "VDA_MaxNumStarRois":
             method = row.get("StarRoiDetMethod")
             if method == 1:
-                value = 0
+                # Use numPredefinedStarRois value when method is 1 (matches Legacy)
+                value = row.get("numPredefinedStarRois", 0)
             elif method == 2:
                 value = 9
             else:
@@ -393,7 +394,6 @@ def schedule_occultation_targets(
         return data
 
     # PASS 1: Search for a single target that covers ALL intervals
-    # Match Legacy behavior: check visibility for ENTIRE SPAN from starts[0] to stops[-1]
     for v_name in tqdm(v_names, desc=f"{description} (Pass 1)", leave=False):
         vis_data = _get_visibility(v_name)
         if vis_data is None:
@@ -401,11 +401,16 @@ def schedule_occultation_targets(
             
         vis_times, visibility = vis_data
         
-        # Check if visible for ENTIRE SPAN (Legacy logic)
-        interval_mask = (vis_times >= starts_array[0]) & (vis_times <= stops_array[-1])
-        if not np.all(visibility[interval_mask] == 1):
-            continue  # Not visible for entire span
+        # Check if visible for ALL intervals individually (less strict)
+        all_visible = True
+        for start, stop in zip(starts_array, stops_array):
+            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            if not np.all(visibility[interval_mask] == 1):
+                all_visible = False
+                break
         
+        if not all_visible:
+            continue
         # Apply this target to all intervals
         for idx, start in enumerate(starts_array):
             schedule.loc[start, "Target"] = v_name
@@ -456,6 +461,144 @@ def schedule_occultation_targets(
 
     if not schedule["Target"].isna().any():
         return o_df, True
+
+    # PASS 3: Best-effort assignment for intervals not fully covered by any
+    # single occultation target. For each remaining interval, choose the
+    # candidate with the highest minute-coverage fraction (if > 0) and
+    # assign it. This enables splitting long occultations across multiple
+    # targets when no single candidate covers the whole interval.
+    for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
+        if not pd.isna(schedule.loc[start, "Target"]):
+            continue
+
+        best_name = None
+        best_coverage = 0.0
+        for v_name in v_names:
+            vis = _get_visibility(v_name)
+            if vis is None:
+                continue
+            vis_times, visibility = vis
+            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            if interval_mask.sum() == 0:
+                continue
+            coverage_fraction = float((visibility[interval_mask] == 1).sum()) / float(interval_mask.sum())
+            if coverage_fraction > best_coverage:
+                best_coverage = coverage_fraction
+                best_name = v_name
+
+        if best_name is not None and best_coverage > 0.0:
+            schedule.loc[start, "Target"] = best_name
+            schedule.loc[start, "Visibility"] = 1
+            match = o_list.loc[o_list["Star Name"] == best_name]
+            if match.empty:
+                continue
+            match_row = match.iloc[0]
+            o_df.loc[idx, "Target"] = best_name
+            o_df.loc[idx, "RA"] = match_row["RA"]
+            o_df.loc[idx, "DEC"] = match_row["DEC"]
+            o_df.loc[idx, "Visibility"] = 1
+
+    # If PASS 3 produced any assignments into o_df, treat this as a valid
+    # partial schedule and return it.
+    if "Target" in o_df.columns and o_df["Target"].notna().any():
+        return o_df, True
+
+    # PASS 4: For intervals still unassigned, split the interval into minute
+    # resolution segments and greedily assign contiguous covered runs to the
+    # candidate that covers the longest run. Build a new occ_df with one row
+    # per assigned segment and return it if any assignments were made.
+    result_rows: list[dict] = []
+    minute_scale = 1440.0
+    for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
+        if not pd.isna(schedule.loc[start, "Target"]):
+            # Already assigned by earlier passes
+            continue
+
+        # Build integer minute indices for the interval
+        start_idx = int(np.floor(start * minute_scale))
+        stop_idx = int(np.ceil(stop * minute_scale))
+        if stop_idx <= start_idx:
+            continue
+        minutes_idx = np.arange(start_idx, stop_idx)
+        if minutes_idx.size == 0:
+            continue
+
+        # Candidate coverage arrays
+        candidate_coverages: dict[str, np.ndarray] = {}
+        for v_name in v_names:
+            vis = _get_visibility(v_name)
+            if vis is None:
+                continue
+            vis_times, vis_flags = vis
+            if vis_times.size == 0:
+                continue
+            vis_min_idx = np.round(vis_times * minute_scale).astype(int)
+            visible_min_idx = set(vis_min_idx[vis_flags == 1])
+            candidate_coverages[v_name] = np.isin(minutes_idx, np.fromiter(visible_min_idx, dtype=int))
+
+        i = 0
+        while i < minutes_idx.size:
+            # Find candidates that cover this minute
+            available = [name for name, arr in candidate_coverages.items() if arr[i]]
+            if not available:
+                i += 1
+                continue
+
+            # For each available candidate, compute run length of consecutive True
+            best_name = None
+            best_len = 0
+            for name in available:
+                arr = candidate_coverages[name]
+                # find first False after i
+                tail = arr[i:]
+                false_pos = np.argmax(~tail) if np.any(~tail) else tail.size
+                run_len = false_pos if false_pos > 0 else tail.size
+                if run_len > best_len:
+                    best_len = run_len
+                    best_name = name
+
+            if best_name is None or best_len == 0:
+                i += 1
+                continue
+
+            # Compute start/end mjd for this run
+            run_start_idx = minutes_idx[i]
+            run_end_idx = minutes_idx[i + best_len - 1] + 1
+            run_start_mjd = run_start_idx / minute_scale
+            run_end_mjd = run_end_idx / minute_scale
+
+            # Format start/stop as ISO UTC strings
+            try:
+                from astropy.time import Time
+
+                start_dt = Time(run_start_mjd, format="mjd", scale="utc").to_datetime()
+                stop_dt = Time(run_end_mjd, format="mjd", scale="utc").to_datetime()
+                start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                stop_str = stop_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            except Exception:
+                start_str = str(run_start_mjd)
+                stop_str = str(run_end_mjd)
+
+            match = o_list.loc[o_list["Star Name"] == best_name]
+            ra_val = match.iloc[0]["RA"] if not match.empty and "RA" in match.columns else float("nan")
+            dec_val = match.iloc[0]["DEC"] if not match.empty and "DEC" in match.columns else float("nan")
+
+            result_rows.append(
+                {
+                    "Target": best_name,
+                    "start": start_str,
+                    "stop": stop_str,
+                    "RA": ra_val,
+                    "DEC": dec_val,
+                    "Visibility": 1.0,
+                }
+            )
+
+            i += best_len
+
+    if result_rows:
+        result_df = pd.DataFrame(result_rows)
+        return result_df, True
 
     mask = schedule["Target"].isna()
     schedule.loc[mask, "Target"] = "No target"

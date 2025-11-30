@@ -205,9 +205,20 @@ class _ScienceCalendarBuilder:
             stop,
             self.config.min_sequence_minutes,
         )
-        if not visit_times:
-            LOGGER.warning("No visibility samples within visit for %s", target_name)
-            return
+        # If all samples were filtered out (e.g. sequences too short), attempt
+        # to fall back to the transit window for transit entries so that
+        # scheduled transits can still be emitted.
+        if not visit_times or not any(bool(f) for f in visibility_flags):
+            if has_transit and transit_start and transit_stop:
+                try:
+                    visit_times = [transit_start[0], transit_stop[0]]
+                    visibility_flags = [1, 1]
+                except Exception:
+                    LOGGER.warning("No visibility samples within visit for %s", target_name)
+                    return
+            else:
+                LOGGER.warning("No visibility samples within visit for %s", target_name)
+                return
 
         visibility_changes = _visibility_change_indices(visibility_flags)
         final_time = visit_times[-1]
@@ -434,7 +445,7 @@ def _normalise_target_name(target: str) -> tuple[str, str]:
         stripped = target[:-4]
         return stripped, stripped
     if target.endswith(tuple("bcdef")) and target != "EV_Lac":
-        return target, target[:-1]
+        return target, target[:-1].strip()
     return target, target
 
 
@@ -480,6 +491,11 @@ def _lookup_auxiliary_row(catalog: pd.DataFrame, target_name: str) -> Optional[p
     match = catalog.loc[catalog["Star Name"] == target_name]
     if match.empty:
         return None
+    # Filter out exoplanet rows (those with a Planet Name) to ensure we get the auxiliary row
+    if "Planet Name" in match.columns:
+        aux_only = match.loc[match["Planet Name"].isna() | (match["Planet Name"] == "")]
+        if not aux_only.empty:
+            return aux_only.head(1)
     return match.head(1)
 
 
@@ -539,6 +555,12 @@ def _extract_visibility_segment(
         format="mjd",
         scale="utc",
     ).to_datetime()
+    # Normalise astropy datetimes to naive Python datetimes (UTC) so comparisons
+    # with schedule start/stop (which are naive datetimes) behave predictably.
+    raw_times = [
+        (rt.replace(tzinfo=None) if getattr(rt, "tzinfo", None) is not None else rt)
+        for rt in raw_times
+    ]
 
     mask = [start <= value <= stop for value in raw_times]
     if not any(mask):

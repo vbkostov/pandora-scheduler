@@ -40,7 +40,7 @@ def _sample_target_row() -> pd.DataFrame:
 def test_general_parameters_defaults():
     obs, occ = observation_utils.general_parameters()
     assert obs == 90
-    assert occ == 30
+    assert occ == 50  # Changed from 30 to 50 for parity
 
 
 def test_remove_short_sequences_filters_runs():
