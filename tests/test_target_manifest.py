@@ -14,17 +14,33 @@ from erfa import ErfaWarning
 warnings.filterwarnings("ignore", category=ErfaWarning)
 
 pytestmark = pytest.mark.filterwarnings(
-    "ignore:ERFA function\ .*:erfa.ErfaWarning"
+    r"ignore:ERFA function .*:erfa.ErfaWarning"
 )
 
 from pandorascheduler_rework.targets.manifest import build_target_manifest
 
 
-BASE_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "comparison_outputs"
-    / "target_definition_files_limited"
-)
+def _find_target_definition_dir() -> Path:
+    """Find target definition files in order of preference."""
+    # Option 1: Limited fixture set for CI/quick testing
+    limited_dir = (
+        Path(__file__).resolve().parents[1]
+        / "comparison_outputs"
+        / "target_definition_files_limited"
+    )
+    if limited_dir.is_dir():
+        return limited_dir
+    
+    # Option 2: Full target list (typical development setup)
+    full_dir = Path(__file__).resolve().parents[2] / "PandoraTargetList" / "target_definition_files"
+    if full_dir.is_dir():
+        return full_dir
+    
+    # Return limited dir path even if it doesn't exist (will be caught by skip check)
+    return limited_dir
+
+
+BASE_DIR = _find_target_definition_dir()
 
 
 def _load_legacy_helper_codes() -> types.ModuleType:

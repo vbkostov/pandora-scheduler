@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import lru_cache
 from numbers import Number
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -525,23 +526,45 @@ def _lookup_occultation_info(
     return None
 
 
-def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
-    path = directory / f"Visibility for {name}.csv"
+@lru_cache(maxsize=64)
+def _read_csv_cached(file_path: str) -> Optional[pd.DataFrame]:
+    """Read CSV file with LRU caching (max ~1.5 GB memory).
+    
+    Args:
+        file_path: String path to CSV file (must be string for caching)
+    
+    Returns:
+        DataFrame or None if file doesn't exist or error occurs
+    """
+    path = Path(file_path)
     if not path.exists():
+        return None
+    try:
+        return pd.read_csv(path)
+    except Exception as e:
+        LOGGER.error(f"Error reading {path}: {e}")
+        return None
+
+
+def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
+    """Read star visibility file with caching."""
+    path = directory / f"Visibility for {name}.csv"
+    df = _read_csv_cached(str(path))
+    if df is None:
         LOGGER.debug("Visibility file missing for %s", name)
         return None
-    df = pd.read_csv(path)
     if df.empty:
         LOGGER.debug("DF is empty for %s", name)
     return df
 
 
 def _read_planet_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
+    """Read planet visibility file with caching."""
     path = directory / f"Visibility for {name}.csv"
-    if not path.exists():
+    df = _read_csv_cached(str(path))
+    if df is None:
         LOGGER.debug("Planet visibility file missing for %s", name)
-        return None
-    return pd.read_csv(path)
+    return df
 
 
 def _extract_visibility_segment(

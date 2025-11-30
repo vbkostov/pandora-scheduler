@@ -87,7 +87,6 @@ def sch_occ_new(starts, stops, visit_start, visit_stop, list_path, sort_key=None
     return o_df, d_flag
 
 
-
 #max time for an observation sequence
 obs_sequence_duration = 90 # minutes
 occ_sequence_limit = 50 # minutes
