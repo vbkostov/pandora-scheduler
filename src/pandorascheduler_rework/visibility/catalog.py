@@ -60,7 +60,6 @@ def build_visibility_catalog(config: VisibilityConfig) -> None:
         star_coord = _resolve_star_coord(
             row,
             star_metadata,
-            prefer_catalog_coordinates=config.prefer_catalog_coordinates,
         )
 
         visibility_df = _build_star_visibility(
@@ -169,51 +168,26 @@ def _build_star_visibility(
 def _resolve_star_coord(
     row: pd.Series,
     star_metadata: dict[str, tuple[float, float]],
-    prefer_catalog_coordinates: bool = False,
 ) -> SkyCoord:
+    """Resolve star coordinates from catalog data only (no Simbad lookups)."""
     star_name = str(row.get("Star Name", ""))
-    simbad_name = str(row.get("Star Simbad Name") or star_name)
     
-    normalized = _normalize_simbad_name(simbad_name)
+    ra_val = row.get("RA")
+    dec_val = row.get("DEC")
 
-    def _catalog_coordinate() -> SkyCoord | None:
-        ra_val = row.get("RA")
-        dec_val = row.get("DEC")
+    # Use star_metadata as fallback if RA/DEC missing
+    if (pd.isna(ra_val) or pd.isna(dec_val)) and star_name in star_metadata:
+        fallback_ra, fallback_dec = star_metadata[star_name]
+        if pd.isna(ra_val):
+            ra_val = fallback_ra
+        if pd.isna(dec_val):
+            dec_val = fallback_dec
 
-        if (pd.isna(ra_val) or pd.isna(dec_val)) and star_name in star_metadata:
-            fallback_ra, fallback_dec = star_metadata[star_name]
-            if pd.isna(ra_val):
-                ra_val = fallback_ra
-            if pd.isna(dec_val):
-                dec_val = fallback_dec
-
-        if pd.notna(ra_val) and pd.notna(dec_val):
-            return SkyCoord(ra=float(ra_val) * u.deg, dec=float(dec_val) * u.deg, frame="icrs")
-        return None
-
-    if not prefer_catalog_coordinates:
-        try:
-            return SkyCoord.from_name(normalized)
-        except Exception as exc:  # pragma: no cover - network lookup fallback
-            catalog_coord = _catalog_coordinate()
-            if catalog_coord is not None:
-                return catalog_coord
-            raise RuntimeError(f"Unable to resolve coordinates for {normalized}") from exc
-
-    catalog_coord = _catalog_coordinate()
-    if catalog_coord is not None:
-        return catalog_coord
-
-    try:
-        return SkyCoord.from_name(normalized)
-    except Exception as exc:  # pragma: no cover - network lookup fallback
-        raise RuntimeError(f"Unable to resolve coordinates for {normalized}") from exc
-
-
-def _normalize_simbad_name(name: str) -> str:
-    if name.startswith("G") and not name.startswith(("GJ", "GD")):
-        return name.replace("G", "Gaia DR3 ", 1)
-    return name
+    if pd.notna(ra_val) and pd.notna(dec_val):
+        return SkyCoord(ra=float(ra_val) * u.deg, dec=float(dec_val) * u.deg, frame="icrs")
+    
+    # No Simbad fallback - raise error if coordinates not in catalog
+    raise RuntimeError(f"No coordinates found in catalog for {star_name}")
 
 
 def _resolve_data_path(candidate: Path, legacy_root: Path) -> Path:
@@ -255,9 +229,11 @@ def _build_planet_transits(
     }
     missing = required_columns.difference(manifest.columns)
     if missing:
-        raise ValueError(
-            f"Manifest {manifest_path} missing required planet columns: {sorted(missing)}"
+        LOGGER.info(
+            "Manifest %s missing planet columns; skipping transit generation (assuming star-only targets).",
+            manifest_path.name,
         )
+        return []
 
     observer_location = EarthLocation(lat=0.0 * u.deg, lon=0.0 * u.deg, height=600.0 * u.km)
 
@@ -291,7 +267,6 @@ def _build_planet_transits(
             row,
             star_metadata,
             observer_location,
-            prefer_catalog_coordinates=config.prefer_catalog_coordinates,
         )
         planet_df.to_csv(planet_output, index=False)
         if not planet_df.empty:
@@ -305,8 +280,6 @@ def _compute_planet_transits(
     planet_row: pd.Series,
     star_metadata: dict[str, tuple[float, float]],
     observer_location: EarthLocation,
-    *,
-    prefer_catalog_coordinates: bool = False,
 ) -> pd.DataFrame:
     star_visibility = pd.read_csv(star_visibility_path)
     t_mjd = star_visibility["Time(MJD_UTC)"].to_numpy(dtype=float)
@@ -337,7 +310,6 @@ def _compute_planet_transits(
     star_coord = _resolve_star_coord(
         planet_row,
         star_metadata,
-        prefer_catalog_coordinates=prefer_catalog_coordinates,
     )
 
     bjd_tdb = Time(
@@ -497,8 +469,9 @@ def _apply_transit_overlaps(
                             continue
                         shared = minutes.intersection(other_minutes)
                         if shared:
-                            best_overlap = max(best_overlap, len(shared) / total)
-                overlaps[idx] = best_overlap
+                            overlap_fraction = len(shared) / total
+                            best_overlap = max(best_overlap, min(overlap_fraction, 1.0))
+                overlaps[idx] = min(best_overlap, 1.0)  # Ensure overlap never exceeds 1.0
 
             if "Transit_Overlap" in df.columns:
                 df["Transit_Overlap"] = overlaps

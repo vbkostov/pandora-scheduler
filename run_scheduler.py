@@ -48,7 +48,10 @@ Example config.json:
     "deprioritization_limit_hours": 48.0,
     "commissioning_days": 0,
     "aux_key": "sort_by_tdf_priority",
-    "show_progress": true
+    "show_progress": true,
+    "std_obs_duration_hours": 0.5,
+    "std_obs_frequency_days": 3.0,
+    "occ_sequence_limit_min": 50
 }
 """
 
@@ -248,12 +251,17 @@ def build_config_dict(args: argparse.Namespace, base_config: Dict, logger: loggi
     if target_def_base:
         if not target_def_base.exists():
             raise FileNotFoundError(f"Target definition directory not found: {target_def_base}")
-        config["target_definition_base"] = target_def_base
+        config["target_definition_base"] = str(target_def_base.resolve())
         logger.info(f"Will generate target manifests from: {target_def_base}")
 
     # Visibility generation
     if args.generate_visibility:
         config["generate_visibility"] = True
+        # # Set output_root for visibility if not provided in config
+        # if "visibility_output_root" not in config:
+        #     config["visibility_output_root"] = args.output / "data" / "targets"
+        #     logger.info(f"Visibility output root set to default: {config['visibility_output_root']}")
+
         config["visibility_sun_deg"] = args.sun_avoidance
         config["visibility_moon_deg"] = args.moon_avoidance
         config["visibility_earth_deg"] = args.earth_avoidance
@@ -275,6 +283,7 @@ def generate_science_calendar(
     output_dir: Path,
     data_dir: Path,
     logger: logging.Logger,
+    config: Optional[object] = None,
 ) -> Path:
     """Generate science calendar XML from schedule CSV."""
     logger.info("Generating science calendar XML...")
@@ -289,6 +298,7 @@ def generate_science_calendar(
     science_calendar.generate_science_calendar(
         inputs,
         output_path=output_path,
+        config=config,
     )
 
     logger.info(f"Science calendar written to: {output_path}")
@@ -350,53 +360,46 @@ def main() -> int:
         base_config = load_config(args.config)
         config = build_config_dict(args, base_config, logger)
 
+
         # Create output directory
         args.output.mkdir(parents=True, exist_ok=True)
 
-        # Setup paths
-        package_dir = Path(__file__).resolve().parent / "src" / "pandorascheduler"
-        data_dir = package_dir / "data"
+        # Setup paths - rework ALWAYS generates data from target definitions
+        output_data_dir = args.output / "data"
+        output_data_dir.mkdir(parents=True, exist_ok=True)
+        data_dir = output_data_dir
         
-        # If target definition base provided, generate manifests in output directory
-        if "target_definition_base" in config:
-            logger.info("Generating target manifests from definition files...")
-            data_dir = args.output / "data"
-            data_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Define target categories
-            target_categories = [
-                "exoplanet",
-                "auxiliary-standard", 
-                "monitoring-standard",
-                "occultation-standard",
-            ]
-            
-            # This will be handled by the pipeline's _generate_target_manifests
-            # We just need to ensure the paths are set up correctly
-            logger.info(f"Target manifests will be generated in: {data_dir}")
+        # Target definitions are REQUIRED for the rework
+        if "target_definition_base" not in config:
+            logger.error("Target definition base is required for the rework scheduler")
+            logger.error(
+                "Please provide target definitions via --target-definitions or "
+                "set PANDORA_TARGET_DEFINITION_BASE environment variable"
+            )
+            return 1
+        
+        logger.info("Generating target manifests from definition files...")
+        
+        # Define target categories
+        target_categories = [
+            "exoplanet",
+            "auxiliary-standard", 
+            "monitoring-standard",
+            "occultation-standard",
+        ]
+        
+        logger.info(f"Target manifests will be generated in: {data_dir}")
         
         # Determine primary target manifest path
         targets_manifest = data_dir / "exoplanet_targets.csv"
-        
-        # Only check if manifest exists when NOT generating from definitions
-        if "target_definition_base" not in config and not targets_manifest.exists():
-            logger.error(f"Target manifest not found: {targets_manifest}")
-            logger.error(
-                "Please provide target definitions via --target-definitions or "
-                "set PANDORA_TARGET_DEFINITION_BASE environment variable, "
-                "or ensure the legacy data directory exists."
-            )
-            return 1
 
-        # Build scheduler request with extra inputs for custom data paths
-        extra_inputs = {}
-        
-        # If using custom data directory, override the CSV paths
-        if "target_definition_base" in config:
-            extra_inputs["primary_target_csv"] = data_dir / "exoplanet_targets.csv"
-            extra_inputs["auxiliary_target_csv"] = data_dir / "auxiliary-standard_targets.csv"
-            extra_inputs["monitoring_target_csv"] = data_dir / "monitoring-standard_targets.csv"
-            extra_inputs["occultation_target_csv"] = data_dir / "occultation-standard_targets.csv"
+        # Build scheduler request - always use output data directory
+        extra_inputs = {
+            "primary_target_csv": data_dir / "exoplanet_targets.csv",
+            "auxiliary_target_csv": data_dir / "auxiliary-standard_targets.csv",
+            "monitoring_target_csv": data_dir / "monitoring-standard_targets.csv",
+            "occultation_target_csv": data_dir / "occultation-standard_targets.csv",
+        }
         
         request = SchedulerRequest(
             targets_manifest=targets_manifest,
@@ -414,12 +417,25 @@ def main() -> int:
         # Generate science calendar XML (unless skipped)
         xml_path = None
         if not args.skip_xml and result.schedule_csv:
-            data_dir = package_dir / "data"
+            # Use output data directory if it exists, otherwise fallback to source
+            sc_data_dir = args.output / "data"
+            if not sc_data_dir.exists():
+                sc_data_dir = data_dir
+
+            # Create config for science calendar generation
+            from pandorascheduler_rework.science_calendar import ScienceCalendarConfig
+            sc_config = ScienceCalendarConfig(
+                visit_limit=None,
+                prioritise_occultations_by_slew=False,
+                occ_sequence_limit_min=config.get("occ_sequence_limit_min", 50),
+            )
+
             xml_path = generate_science_calendar(
                 result.schedule_csv,
                 args.output,
-                data_dir,
+                sc_data_dir,
                 logger,
+                config=sc_config,
             )
 
         # Print summary

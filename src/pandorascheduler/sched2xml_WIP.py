@@ -8,6 +8,11 @@ from numbers import Number
 
 import numpy as np
 import pandas as pd
+from functools import lru_cache
+# LRU cache for CSV reads
+@lru_cache(maxsize=32)
+def cached_read_csv(path):
+    return pd.read_csv(path)
 import xml.etree.ElementTree as ET
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
@@ -27,7 +32,7 @@ PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(PACKAGEDIR, "data")
 
 schedule_path = os.path.join(
-    DATA_DIR, "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05.csv"
+    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05.csv"
 )
 tar_vis_path = os.path.join(DATA_DIR, "targets")
 aux_vis_path = os.path.join(DATA_DIR, "aux_targets")
@@ -37,21 +42,16 @@ occ_path = os.path.join(DATA_DIR, "occultation-standard_targets.csv")
 
 a_list = pd.read_csv(aux_path)
 sch = pd.read_csv(schedule_path)
-t_list = pd.read_csv(tar_path)
+occ_list = pd.read_csv(occ_path)
+
+target_definition_files = ['exoplanet', 'auxiliary-standard', 'monitoring-standard', 'occultation-standard']
+t_list = pd.read_csv(os.path.join(DATA_DIR, f"{target_definition_files[0]}_targets.csv"))
+
 
 def sch_occ_new(starts, stops, visit_start, visit_stop, list_path, sort_key=None, prev_obs=None):
     """Build an occultation schedule for the provided intervals."""
 
-    e_sched = [
-        [
-            "",
-            datetime.strftime(starts[s], "%Y-%m-%dT%H:%M:%SZ"),
-            datetime.strftime(stops[s], "%Y-%m-%dT%H:%M:%SZ"),
-            "",
-            "",
-        ]
-        for s in range(len(starts))
-    ]
+    e_sched = [['',datetime.strftime(starts[s], "%Y-%m-%dT%H:%M:%SZ"), datetime.strftime(stops[s], "%Y-%m-%dT%H:%M:%SZ"), '', ''] for s in range(len(starts))]
     o_df = pd.DataFrame(e_sched, columns=["Target", "start", "stop", "RA", "DEC"])
 
     starts_mjd = Time(starts, format="datetime").to_value("mjd")
@@ -72,7 +72,7 @@ def sch_occ_new(starts, stops, visit_start, visit_stop, list_path, sort_key=None
         path_ = aux_vis_path
         try_occ_targets = "occ list"
 
-    o_df, d_flag = helper_codes.schedule_occultation_targets(
+    o_df, d_flag = helper_codes.schedule_occultation_targets_new(
         v_names,
         starts_mjd,
         stops_mjd,
@@ -90,7 +90,7 @@ def sch_occ_new(starts, stops, visit_start, visit_stop, list_path, sort_key=None
 
 #max time for an observation sequence
 obs_sequence_duration = 90 # minutes
-occ_sequence_limit = 30 # minutes
+occ_sequence_limit = 50 # minutes
 obs_seq_duration, occ_seq_limit = helper_codes.general_parameters(obs_sequence_duration, occ_sequence_limit)
 dt = timedelta(minutes = obs_seq_duration)
 occultation_sequence_limit = timedelta(minutes = occ_seq_limit + 1.)
@@ -103,25 +103,21 @@ meta=ET.SubElement(cal, 'Meta',
                    Valid_From=f"{sch['Observation Start'][0]}",
                    Expires=f"{sch['Observation Stop'][len(sch)-1]}",
                    Calendar_Weights='0.8, 0.0, 0.2',
-                #    Ephemeris='sma=6828.14, ecc=0.0, inc=97.2188, aop=0.0, raan=303.263, ta=0.0',
                    Keepout_Angles='91.0, 25.0, 63.0',
                    Observation_Sequence_Duration_hrs_max = f'{dt}',
                    Removed_Sequences_Shorter_Than_min = f'{too_short_sequences}',
                    Created=f'{str(hcc.round_to_nearest_second(datetime.now()))}',
-#                   Author="P Bonney",
                    Delivery_Id='',
                    )
-#
-#
-#
-for i in tqdm(range(min(10, len(sch)))):
+
+for i in tqdm(range(len(sch))):
 
     t_name = sch['Target'][i]
 
     exoplanet_tdf = bool(np.isfinite(sch.loc[i]['Transit Coverage']))
 
     if t_name.endswith(('b', 'c', 'd', 'e', 'f')) and (t_name != 'EV_Lac'):
-        st_name = t_name[:-2]
+        st_name = t_name[:-1]
     elif t_name.endswith(('STD')):
         t_name = t_name[:-4]
         st_name = t_name
@@ -137,25 +133,20 @@ for i in tqdm(range(min(10, len(sch)))):
     stop = datetime.strptime(sch['Observation Stop'][i], "%Y-%m-%d %H:%M:%S")
     
     if t_name in t_list['Planet Name'].values and exoplanet_tdf:
-        v_data = pd.read_csv(
-            os.path.join(tar_vis_path, st_name, f"Visibility for {st_name}.csv")
-        )
+        v_data = cached_read_csv(os.path.join(tar_vis_path, st_name, f"Visibility for {st_name}.csv"))
         tmp_idx = t_list.index[t_list['Planet Name'] == t_name].tolist()
         targ_info = t_list.loc[[tmp_idx[0]]]
         i_flag = 1
-        tv_data = pd.read_csv(
-            os.path.join(
-                tar_vis_path, st_name, t_name, f"Visibility for {t_name}.csv"
-            )
-        )
+        tv_data = cached_read_csv(os.path.join(tar_vis_path, st_name, t_name, f"Visibility for {t_name}.csv"))
         tv_st = Time(tv_data['Transit_Start'], format='mjd', scale='utc').to_value('datetime')
         tv_sp = Time(tv_data['Transit_Stop'], format='mjd', scale='utc').to_value('datetime')
     elif not exoplanet_tdf and t_name != 'Free Time' and not t_name.startswith(('WARNING')):
-        v_data = pd.read_csv(
-            os.path.join(aux_vis_path, st_name, f"Visibility for {t_name}.csv")
-        )
+        v_data = cached_read_csv(os.path.join(aux_vis_path, st_name, f"Visibility for {t_name}.csv"))
         tmp_idx = a_list.index[(a_list['Star Name'] == t_name)].tolist()
-        targ_info = pd.DataFrame(a_list.loc[tmp_idx[0]]).T
+        if len(tmp_idx) == 1:
+            targ_info = pd.DataFrame(a_list.loc[tmp_idx[0]]).T
+        else:
+            targ_info = pd.DataFrame(a_list.loc[tmp_idx][a_list.loc[tmp_idx]['numPredefinedStarRois'] == 0].iloc[0]).T
         i_flag = 0
     elif t_name == 'Free Time':
         continue
@@ -178,7 +169,8 @@ for i in tqdm(range(min(10, len(sch)))):
             continue
     v_time_all = Time(v_data["Time(MJD_UTC)"], format="mjd", scale="utc").to_value("datetime")
     v_time = v_time_all[(v_time_all >= start) & (v_time_all <= stop)]
-    v_time = np.vectorize(hcc.round_to_nearest_second)(v_time)
+    # Only round once, and ensure rounding is done after filtering
+    v_time = np.array([hcc.round_to_nearest_second(t) for t in v_time])
     v_flag = np.asarray(v_data['Visible'])[(v_time_all >= start) & (v_time_all <= stop)]
 
     v_flag, _ = hcc.remove_short_sequences(v_flag, too_short_sequences)
@@ -196,14 +188,12 @@ for i in tqdm(range(min(10, len(sch)))):
         )
 
         n = (sp - st) / dt
-
-        sps = [st + (dt * (i + 1)) for i in range(int(n))]
-        if int(n) < n:
+        # Use integer division and round n to avoid float errors
+        n_int = int(round(n))
+        sps = [st + (dt * (i + 1)) for i in range(n_int)]
+        # Only append sp if it's not already included (avoid off-by-one)
+        if not sps or sps[-1] < sp:
             sps.append(sp)
-
-        if sps[-1] == v_time[-1]:
-            sps[-1] = v_time[-2]
-
         sps_all = [st, *sps]
         for s in range(len(sps_all) - 1):
             if i_flag:

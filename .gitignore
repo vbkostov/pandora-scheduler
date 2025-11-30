@@ -1,5 +1,8 @@
 sandbox
 
+# IDE settings
+.vscode/
+
 # Mac things
 .DS_Store
 
@@ -50,17 +53,39 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Outputs
-*/targets/
-*.csv
+# Outputs - Large data files
+# Visibility files (too large for git)
+src/pandorascheduler/data/targets/
+src/pandorascheduler/data/aux_targets/
+output_standalone/data/targets/
+output_standalone/data/aux_targets/
+
+# Generated manifest files (regenerated from source)
+src/pandorascheduler/data/*_targets.csv
+src/pandorascheduler/data/aux_list_new.csv
+output_standalone/data/*_targets.csv
+output_standalone/data/aux_list_new.csv
+
+# Generated schedules and XMLs
+output_standalone/*.csv
+output_standalone/*.xml
+output_standalone/data/*.xml
+src/pandorascheduler/data/*.xml
+
+# Temporary output directories
+output_standalone/temp/
+
+# Other large data files
 src/pandorascheduler/data/GMAT_pandora_600_20240512.txt
+src/pandorascheduler/data/Pandora-*.txt
+src/pandorascheduler/data/baseline/
+src/pandorascheduler/data/20*/
+src/pandorascheduler/data/ToO_list.csv
 *.pkl
-*.xml
-*.xml
 *.png
-src/pandorascheduler/data/Deprioritized_Targets_2025-10-15 00:00:00.json
-src/pandorascheduler/data/Non_Primary_Obs_Time_2025-10-15 00:00:00.json
-src/pandorascheduler/scheduler_debug.log
-*.json
-*.txt
 *.zip
+
+# Specific generated files
+src/pandorascheduler/data/Deprioritized_Targets_*.json
+src/pandorascheduler/data/Non_Primary_Obs_Time_*.json
+src/pandorascheduler/scheduler_debug.log

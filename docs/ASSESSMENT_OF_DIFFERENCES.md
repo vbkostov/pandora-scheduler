@@ -1,56 +1,55 @@
 # Assessment of Output Differences: Legacy vs. Rework
 
-**Date:** 2025-11-19
-**Assessment Type:** Static Analysis (No code execution)
+**Date:** 2025-11-22
+**Status:** Active Analysis
 
 ## Executive Summary
 
-This document outlines the expected differences between the legacy `pandorascheduler` and the new `pandorascheduler_rework` pipelines. While the core scheduling logic has achieved high parity, several architectural and implementation improvements in the rework will lead to divergent outputs in specific areas.
+The `pandorascheduler_rework` aims for functional parity with the legacy `pandorascheduler` while modernizing the architecture. While the core scheduling logic produces identical results for the vast majority of targets, specific architectural decisions and bug fixes in the rework lead to intentional divergences.
 
-## 1. Science Calendar XML (High Divergence)
+## 1. Coordinate Resolution (High Divergence Potential)
 
-The `ScienceCalendar.xml` output is the area with the most significant expected differences.
+*   **Legacy Behavior:** The legacy code (`helper_codes.py`) often attempts to resolve coordinates via SIMBAD (`SkyCoord.from_name`) if they are missing or malformed in the input CSVs.
+*   **Rework Behavior:** The rework **strictly** relies on the input catalog/manifest values. It explicitly raises a `RuntimeError` if coordinates are missing.
+*   **Impact:**
+    *   **Reproducibility:** The rework is deterministic and works offline. The legacy code depends on network availability and the state of the SIMBAD database.
+    *   **Data Integrity:** The rework forces users to fix their input data rather than silently masking missing coordinates.
+    *   **Difference:** If the input catalog differs from SIMBAD, the calculated visibility windows and observation times will differ.
 
-### A. Visit Mismatches
-*   **Issue:** Known mismatches in visit generation for specific targets (e.g., `TOI-776`, `L_98-59`, `GJ_3470`).
-*   **Cause:** Differences in floating-point rounding and filtering logic within visibility window extraction.
-*   **Impact:** Some visits may be shifted by one minute or split differently compared to the legacy output.
+## 2. Visibility Calculation (Low Divergence)
 
-### B. Occultation Window Slicing
-*   **Issue:** The rework uses a cleaner, but different, logic for segmenting occultation windows (`_occultation_windows`).
-*   **Cause:** The legacy `sched2xml_WIP.sch_occ_new` function has complex edge-case handling that was simplified in the rework.
-*   **Impact:** Start and stop times for occultation observations may differ, and the number of segments in a block may vary.
+*   **Legacy Behavior:**
+    *   **Fixed:** The "last partner wins" bug in `transits.py` has been patched to correctly calculate maximum overlap.
+    *   Skips visibility generation if files exist, even if parameters (like avoidance angles) have changed.
+*   **Rework Behavior:**
+    *   Correctly calculates the maximum overlap across all partners.
+    *   Implements robust freshness checks.
+*   **Impact:**
+    *   **Transit Overlap:** Values should now match between legacy and rework for multi-planet systems.
+    *   **Freshness:** The rework ensures visibility data matches the current configuration.
 
-### C. Coordinate Resolution
-*   **Issue:** Differences in Right Ascension (RA) and Declination (DEC) values.
-*   **Cause:**
-    *   **Legacy:** Defaults to **SIMBAD network lookups** for coordinates.
-    *   **Rework:** Prioritizes **catalog/manifest values** first, falling back to SIMBAD only if necessary.
-*   **Impact:** Small numerical discrepancies in coordinate values if the input catalog differs from SIMBAD's current data.
+## 3. Science Calendar XML (Low Divergence)
 
-## 2. Visibility CSVs (Medium Divergence)
+*   **Legacy Behavior:** `sched2xml_WIP.py` has complex, ad-hoc logic for slicing occultation windows and handling edge cases.
+*   **Rework Behavior:** `science_calendar.py` uses a simplified, cleaner logic for window segmentation.
+*   **Impact:**
+    *   **Occultations:** Start/stop times for occultation sequences might differ by small amounts (e.g., 1 minute) due to different rounding or segmentation logic.
+    *   **Structure:** The XML structure is identical, but attribute ordering might vary (though XML is order-independent for attributes).
 
-### A. Overlap Calculations
-*   **Issue:** Numerical differences in `Transit_Coverage` and `SAA_Overlap` columns.
-*   **Cause:** The rework uses a minute-resolution intersection method which introduces a documented ~0.09 fractional error compared to the legacy method.
-*   **Impact:** Planet visibility files will have slightly different overlap metrics, which could marginally affect scheduling priority for edge-case targets.
+## 4. Target Manifest Generation (Low Divergence)
 
-### B. File Freshness & Regeneration
-*   **Issue:** The rework may regenerate files that the legacy code skips.
-*   **Cause:** Legacy code skips generation if the file exists (unless forced). The rework implements smarter freshness checks.
-*   **Impact:** If underlying GMAT or config data has changed, the rework will produce up-to-date files, while the legacy code might use stale cached files, leading to divergence.
+*   **Legacy Behavior:** Implicitly relies on directory structures and specific file naming conventions.
+*   **Rework Behavior:** Uses `targets/manifest.py` to explicitly parse JSON definitions into standardized CSVs.
+*   **Impact:**
+    *   **Column Types:** The rework enforces stricter types (e.g., ensuring `Priority` is float), which might lead to minor differences in sorting if the legacy code relied on string comparison for numbers.
+    *   **Parity:** Recent fixes (e.g., planet name formatting, epoch handling) have brought the rework into very close alignment with legacy.
 
-## 3. Target Manifests (Medium Divergence)
+## 5. Execution Model
 
-*   **Issue:** Potential differences in `*_targets.csv` inputs.
-*   **Cause:** The logic for converting JSON target definitions to CSV manifests is currently being ported.
-*   **Impact:** If the rework generates these CSVs differently (e.g., different column order, formatting, or filtering), the scheduler inputs will differ.
-
-## 4. Operational Differences
-
-*   **Console Output:** The rework uses `tqdm` progress bars and structured logging, replacing the legacy print statements.
-*   **Error Handling:** The rework is more robust against external failures (e.g., SIMBAD lookups), meaning it may successfully schedule a target that the legacy code would crash on or skip.
+*   **Legacy:** Script-based (`scheduler_deprioritize_102925.py`), relying on global state and hardcoded paths.
+*   **Rework:** Library-based (`pipeline.py`, `scheduler.py`), using explicit configuration objects and dependency injection.
+*   **Impact:** The rework is easier to test and integrate, but requires a different invocation method (`run_scheduler.py`).
 
 ## Conclusion
 
-The **Schedule CSV** and **Tracker CSV** are expected to match closely (verified by current tests), but the **Science Calendar XML** and **Visibility CSVs** will show differences due to improved logic and architectural changes. These differences are largely intentional improvements but must be accounted for during validation.
+The primary sources of divergence are **intentional improvements**: removing network dependencies (Simbad) and fixing logic bugs (transit overlap). Any remaining differences should be validated to ensure they stem from these known causes.

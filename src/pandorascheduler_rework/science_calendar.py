@@ -48,9 +48,9 @@ class ScienceCalendarInputs:
 class ScienceCalendarConfig:
     """Tunable knobs mirroring the legacy script defaults."""
 
-    visit_limit: Optional[int] = 10
+    visit_limit: Optional[int] = None
     obs_sequence_duration_min: int = 90
-    occ_sequence_limit_min: int = 30
+    occ_sequence_limit_min: int = 50
     min_sequence_minutes: int = 5
     break_occultation_sequences: bool = True
     use_target_list_for_occultations: bool = False
@@ -153,24 +153,26 @@ class _ScienceCalendarBuilder:
         ET.SubElement(root, "Meta", attrib=attrs)
 
     def _add_visit(self, root: ET.Element, visit_counter: int, row: pd.Series) -> None:
+        id_padding = 4 - len(str(visit_counter))
         target_label = str(row.get("Target", ""))
-
-        visit_element = ET.SubElement(root, "Visit")
-        id_padding = max(0, 4 - len(str(visit_counter - 1)))
-        ET.SubElement(visit_element, "ID").text = f"{'0' * id_padding}{visit_counter}"
 
         if not target_label or target_label == "Free Time":
             return
+
         if target_label.startswith("WARNING"):
             LOGGER.warning("Need visible STD during %s", target_label)
             return
+
+        target_name, star_name = _normalise_target_name(target_label)
+        
+        visit_element = ET.SubElement(root, "Visit")
+        ET.SubElement(visit_element, "ID").text = f"{'0' * id_padding}{visit_counter}"
 
         start = _parse_datetime(row.get("Observation Start"))
         stop = _parse_datetime(row.get("Observation Stop"))
         if start is None or stop is None:
             raise ValueError(f"Unable to parse observation window for {target_label}")
 
-        target_name, star_name = _normalise_target_name(target_label)
         planet_row = _lookup_planet_row(self.target_catalog, target_name)
         has_transit = _is_transit_entry(row)
 
@@ -242,10 +244,7 @@ class _ScienceCalendarBuilder:
         )
         if occultation_info is None:
             LOGGER.warning(
-                "Unable to schedule occultation target for %s between %s and %s",
-                target_name,
-                start,
-                final_time,
+                f"Unable to schedule occultation target for {target_name} between {start} and {final_time}",
             )
             return
 
@@ -301,12 +300,9 @@ class _ScienceCalendarBuilder:
                         if self.config.break_occultation_sequences
                         else segment_stop
                     )
-                    if oc_index >= len(occ_df):
+                    if occ_df is None or oc_index >= len(occ_df):
                         LOGGER.warning(
-                            "Ran out of occultation targets for %s between %s and %s",
-                            target_name,
-                            current,
-                            next_value,
+                            f"Ran out of occultation targets for {target_name} between {current} and {next_value}",
                         )
                         break
 
@@ -401,8 +397,9 @@ class _ScienceCalendarBuilder:
             expanded_stops = list(stops)
 
         candidates: List[Tuple[Path, str, Path]] = [
-            (self.data_dir / "exoplanet_targets.csv", "target list", self.data_dir / "targets"),
             (self.data_dir / "occultation-standard_targets.csv", "occ list", self.data_dir / "aux_targets"),
+            # (self.data_dir / "exoplanet_targets.csv", "target list", self.data_dir / "targets"),
+            # (self.data_dir / "auxiliary_targets.csv", "aux list", self.data_dir / "aux_targets"),
         ]
         if not self.config.use_target_list_for_occultations:
             candidates.reverse()
@@ -437,7 +434,7 @@ def _normalise_target_name(target: str) -> tuple[str, str]:
         stripped = target[:-4]
         return stripped, stripped
     if target.endswith(tuple("bcdef")) and target != "EV_Lac":
-        return target, target[:-2]
+        return target, target[:-1]
     return target, target
 
 
@@ -445,7 +442,11 @@ def _parse_datetime(value: object) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):
-        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
+        for pattern in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%d %H:%M:%S.%f",
+        ):
             try:
                 return datetime.strptime(value, pattern)
             except ValueError:
@@ -513,7 +514,10 @@ def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     if not path.exists():
         LOGGER.debug("Visibility file missing for %s", name)
         return None
-    return pd.read_csv(path)
+    df = pd.read_csv(path)
+    if df.empty:
+        LOGGER.debug("DF is empty for %s", name)
+    return df
 
 
 def _read_planet_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
@@ -757,14 +761,8 @@ def _fallback_float(value: object, info: Optional[pd.DataFrame], column: str) ->
 
 
 def _resolve_coordinates(star_name: str) -> tuple[float, float]:
-    try:
-        coord = SkyCoord.from_name(star_name)
-        ra_deg = getattr(coord.ra, "degree", float("nan"))
-        dec_deg = getattr(coord.dec, "degree", float("nan"))
-        return float(ra_deg), float(dec_deg)
-    except Exception:  # SkyCoord lookup failed
-        LOGGER.error("Unable to resolve coordinates for %s", star_name)
-        return float("nan"), float("nan")
+    """Raise error if coordinates not in catalog - no Simbad lookups allowed."""
+    raise RuntimeError(f"No coordinates found in catalog for {star_name}")
 
 
 def _serialise_calendar(root: ET.Element) -> str:

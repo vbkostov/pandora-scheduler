@@ -190,7 +190,7 @@ def star_vis(sun_block:float, moon_block:float, earth_block:float,
         if star_name_sc.startswith("G") and not star_name_sc.startswith("GJ") and not star_name_sc.startswith("GD"):
             star_name_sc = star_name_sc.replace('G', 'Gaia DR3 ')
 
-        star_sc = SkyCoord.from_name(star_name_sc)
+        star_sc = SkyCoord(ra=target_data["RA"].iloc[i]*u.degree, dec=target_data["DEC"].iloc[i]*u.degree, frame="icrs")
         logging.info('Analyzing constraints for:', star_name)
         
         #Check if folder exists for target and if not create new folder for 
@@ -464,7 +464,7 @@ def Transit_overlap(target_list:str, partner_list:str, star_name:str):
                     logging.info('Checking ', planet_name, ' against: ', planet_partner)
                 
                 for n in range(len(All_start_transits[planet_name].dropna())):
-                    
+                    transit_overlap = 0.0
                     for p in range(len(All_start_transits[planet_partner].dropna())):
                         if (All_start_transits[planet_partner][p] < All_start_transits[planet_name][n] and
                             All_end_transits[planet_partner][p] < All_start_transits[planet_name][n]) or \
@@ -483,9 +483,10 @@ def Transit_overlap(target_list:str, partner_list:str, star_name:str):
                             pset = set(partner_rng)
                             tset = set(transit_rng)
                             overlap_times = pset.intersection(tset)
-                            transit_overlap = len(overlap_times)/len(transit_rng)
-                            # overlap['Transit_Overlap'][n] = transit_overlap
-                            overlap.loc[n, 'Transit_Overlap'] = transit_overlap
+                            transit_overlap += len(overlap_times)/len(transit_rng)
+                            current_overlap = overlap.loc[n, 'Transit_Overlap']
+                            new_overlap = np.min((transit_overlap, 1.0))
+                            overlap.loc[n, 'Transit_Overlap'] = np.max((current_overlap, new_overlap))
                        
     ###         Update pandas dataframe and save csv
             if 'Transit_Overlap' in planet_data:

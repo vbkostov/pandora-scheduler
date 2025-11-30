@@ -33,6 +33,8 @@ class SchedulerConfig:
     commissioning_days: int = 0
     aux_key: Optional[str] = "sort_by_tdf_priority"
     show_progress: bool = False
+    std_obs_duration_hours: float = 0.5
+    std_obs_frequency_days: float = 3.0
 
     def __post_init__(self) -> None:
         if not np.isclose(sum(self.sched_weights), 1.0):
@@ -221,7 +223,7 @@ def run_scheduler(inputs: SchedulerInputs, config: SchedulerConfig) -> Scheduler
             )
             if not aux_df.empty:
                 schedule_rows.append(aux_df)
-            logger.info("%s; window %s to %s", log_info, start, stop)
+            logger.info(f"{log_info}; window {start} to {stop}")
             start = stop
             stop = start + config.obs_window
             advance_progress(start)
@@ -619,7 +621,7 @@ def _handle_targets_of_opportunity(
     )
     schedule_parts.append(too_df)
 
-    logger.info("Scheduled Target of Opportunity: %s", target_name)
+    logger.info(f"Scheduled Target of Opportunity: {target_name}")
     for message in tf_warning_messages:
         logger.warning(message)
 
@@ -639,9 +641,9 @@ def _schedule_auxiliary_target(
     scheduled_rows: list[list] = []
     row_columns = ["Target", "Observation Start", "Observation Stop", "RA", "DEC"]
 
-    obs_std_duration = timedelta(hours=2)
+    obs_std_duration = timedelta(hours=config.std_obs_duration_hours)
     if (
-        active_start - state.last_std_obs > timedelta(days=7)
+        active_start - state.last_std_obs > timedelta(days=config.std_obs_frequency_days)
         and active_start + obs_std_duration < stop
     ):
         std_path = inputs.paths.data_dir / "monitoring-standard_targets.csv"
@@ -677,10 +679,7 @@ def _schedule_auxiliary_target(
                     float(std_row["DEC"]),
                     float(std_row["Priority"]),
                 )
-                logger.info(
-                    "%s scheduled for STD observations with full visibility",
-                    std_name,
-                )
+                logger.info(f"{std_name} scheduled for STD observations with full visibility")
                 break
 
         if std_candidate is None:
@@ -804,9 +803,7 @@ def _schedule_auxiliary_target(
             )
             scheduled_rows.append([name, active_start, stop, ra_val, dec_val])
             logger.info(
-                "%s scheduled for non-primary observations with full visibility from %s",
-                name,
-                target_def,
+                f"{name} scheduled for non-primary observations with full visibility from {target_def}"
             )
             selected_row = scheduled_rows[-1]
             priority_baseline = priorities[-1] if priorities else priority_val
@@ -824,10 +821,7 @@ def _schedule_auxiliary_target(
                 log_info = f"No non-primary target with full visibility; {name} scheduled for non-primary observations with {best_visibility:.2f}% visibility from {target_def}."
                 scheduled_rows.append([name, active_start, stop, ra_val, dec_val])
                 logger.info(
-                    "No non-primary target with full visibility; %s scheduled at %.2f%% visibility from %s",
-                    name,
-                    best_visibility,
-                    target_def,
+                    f"No non-primary target with full visibility; {name} scheduled at {best_visibility:.2f}% visibility from {target_def}"
                 )
                 selected_row = scheduled_rows[-1]
                 priority_baseline = priorities[-1] if priorities else priority_val
@@ -854,6 +848,7 @@ def _schedule_auxiliary_target(
             stats.last_priority = 0.95 * float(baseline)
 
     result = pd.DataFrame(scheduled_rows, columns=row_columns)
+    # Update all_target_obs_time
     for record in result.to_dict(orient="records"):
         target_label = str(record["Target"])
         if target_label == "Free Time":
@@ -864,7 +859,7 @@ def _schedule_auxiliary_target(
         state.all_target_obs_time[target_label] = (
             state.all_target_obs_time.get(target_label, timedelta()) + duration
         )
-
+    
     return result, log_info
 
 
@@ -907,7 +902,7 @@ def _schedule_primary_target(
         )
         if not aux_df.empty:
             dfs.append(aux_df)
-        logger.info("%s; window %s to %s", aux_log, start, obs_start)
+        logger.info(f"{aux_log}; window {start} to {obs_start}")
 
     main_schedule = pd.DataFrame(
         [
@@ -957,10 +952,7 @@ def _schedule_primary_target(
     acquired_value = state.tracker.loc[tracker_mask, "Transits Acquired"].iloc[0]
     acquired = int(cast(float, acquired_value))
     logger.info(
-        "Scheduled the %s transit of %s transit coverage: %s",
-        acquired,
-        planet_name,
-        trans_cover,
+        f"Scheduled transit {acquired} of {planet_name}. Transit coverage: {trans_cover:.2f}",
     )
 
     return pd.concat(dfs, ignore_index=True)

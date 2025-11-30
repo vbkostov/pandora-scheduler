@@ -555,10 +555,10 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
 
     obs_rng = pd.date_range(start, stop, freq = "min")
 
-    obs_std_dur = timedelta(hours = 2) 
+    obs_std_dur = timedelta(hours = 0.5) 
 
     # Add standard stars!
-    if (start - last_std_obs > timedelta(days = 7.)) and ((start + obs_std_dur) < stop):
+    if (start - last_std_obs > timedelta(days = 3.)) and ((start + obs_std_dur) < stop):
 
         std_fn = f"{PACKAGEDIR}/data/monitoring-standard_targets.csv"
         std_targs = pd.read_csv(std_fn).reset_index(drop=True)
@@ -572,13 +572,11 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
             vis_file = f"{PACKAGEDIR}/data/aux_targets/{std_names[nn]}/Visibility for {std_names[nn]}.csv"
             vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
 
-            vis_times = Time(
-                vis["Time(MJD_UTC)"].to_numpy(),
-                format="mjd",
-                scale="utc",
-            ).to_datetime()
-            vis_times = pd.to_datetime(vis_times)
-            time_mask = (vis_times >= start) & (vis_times <= start + obs_std_dur)
+            # Optimize: Convert start/stop to MJD and filter directly
+            start_mjd = Time(start).mjd
+            stop_mjd = Time(start + obs_std_dur).mjd
+            
+            time_mask = (vis["Time(MJD_UTC)"] >= start_mjd) & (vis["Time(MJD_UTC)"] <= stop_mjd)
             vis_filtered = vis.loc[time_mask]
 
             if not vis_filtered.empty and vis_filtered['Visible'].all():
@@ -653,13 +651,11 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
             try:
                 vis_file = f"{PACKAGEDIR}/data/aux_targets/{names[n]}/Visibility for {names[n]}.csv"
                 vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
-                vis_times = Time(
-                    vis["Time(MJD_UTC)"].to_numpy(),
-                    format="mjd",
-                    scale="utc",
-                ).to_datetime()
-                vis_times = pd.to_datetime(vis_times)
-                time_mask = (vis_times >= start) & (vis_times <= stop)
+                # Optimize: Convert start/stop to MJD and filter directly
+                start_mjd = Time(start).mjd
+                stop_mjd = Time(stop).mjd
+                
+                time_mask = (vis["Time(MJD_UTC)"] >= start_mjd) & (vis["Time(MJD_UTC)"] <= stop_mjd)
                 vis_filtered = vis.loc[time_mask]
 
                 if not vis_filtered.empty and vis_filtered['Visible'].all():
@@ -920,7 +916,7 @@ if __name__ == "__main__":
         aux_targ_list = f"{PACKAGEDIR}/data/occultation-standard_targets.csv"
     fname_tracker = os.path.join(output_dir, f"Tracker_{pandora_start[0:10]}_to_{pandora_stop[0:10]}.pkl")
 
-    if not os.path.exists(f"{PACKAGEDIR}/data/aux_list_new.csv"):
+    if not os.path.exists(f"{PACKAGEDIR}/data/all_targets.csv"):
         create_aux_list = helper_codes.create_aux_list(target_definition_files, PACKAGEDIR)
 
     aux_key = 'sort_by_tdf_priority'

@@ -44,8 +44,8 @@ _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 
 def general_parameters(
     obs_sequence_duration: int = 90,
-    occ_sequence_limit: int = 30,
-) -> Tuple[int, int]:
+    occ_sequence_limit: int = 50,
+) -> tuple[timedelta, int]:
     return obs_sequence_duration, occ_sequence_limit
 
 
@@ -373,13 +373,65 @@ def schedule_occultation_targets(
 
     base_path = Path(path) if path is not None else None
 
-    for v_name in tqdm(v_names, desc=description, leave=False):
-        file_path = _resolve_visibility_file(v_name, base_path)
-        if file_path is None:
-            LOGGER.debug("Skipping %s; visibility file not found", v_name)
-            continue
+    base_path = Path(path) if path is not None else None
 
-        vis_times, visibility = _load_visibility_data(file_path)
+    # Cache visibility data to avoid re-reading files in the second pass
+    # Key: v_name, Value: (vis_times, visibility)
+    visibility_cache: Dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+    def _get_visibility(name: str) -> Optional[tuple[np.ndarray, np.ndarray]]:
+        if name in visibility_cache:
+            return visibility_cache[name]
+        
+        f_path = _resolve_visibility_file(name, base_path)
+        if f_path is None:
+            LOGGER.debug("Skipping %s; visibility file not found", name)
+            return None
+            
+        data = _load_visibility_data(f_path)
+        visibility_cache[name] = data
+        return data
+
+    # PASS 1: Search for a single target that covers ALL intervals
+    # Match Legacy behavior: check visibility for ENTIRE SPAN from starts[0] to stops[-1]
+    for v_name in tqdm(v_names, desc=f"{description} (Pass 1)", leave=False):
+        vis_data = _get_visibility(v_name)
+        if vis_data is None:
+            continue
+            
+        vis_times, visibility = vis_data
+        
+        # Check if visible for ENTIRE SPAN (Legacy logic)
+        interval_mask = (vis_times >= starts_array[0]) & (vis_times <= stops_array[-1])
+        if not np.all(visibility[interval_mask] == 1):
+            continue  # Not visible for entire span
+        
+        # Apply this target to all intervals
+        for idx, start in enumerate(starts_array):
+            schedule.loc[start, "Target"] = v_name
+            schedule.loc[start, "Visibility"] = 1
+            
+            match = o_list.loc[o_list["Star Name"] == v_name]
+            if not match.empty:
+                match_row = match.iloc[0]
+                o_df.loc[idx, "Target"] = v_name
+                o_df.loc[idx, "RA"] = match_row["RA"]
+                o_df.loc[idx, "DEC"] = match_row["DEC"]
+                o_df.loc[idx, "Visibility"] = 1
+        
+        return o_df, True
+
+    # PASS 2: Fill gaps with multiple targets (Greedy approach)
+    for v_name in tqdm(v_names, desc=f"{description} (Pass 2)", leave=False):
+        # If schedule is full, we are done
+        if not schedule["Target"].isna().any():
+            return o_df, True
+
+        vis_data = _get_visibility(v_name)
+        if vis_data is None:
+            continue
+            
+        vis_times, visibility = vis_data
 
         for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
             if pd.isna(schedule.loc[start, "Target"]):
@@ -402,8 +454,8 @@ def schedule_occultation_targets(
                         schedule.loc[start, "Visibility"] = 0
                         o_df.loc[idx, "Visibility"] = 0
 
-        if not schedule["Target"].isna().any():
-            return o_df, True
+    if not schedule["Target"].isna().any():
+        return o_df, True
 
     mask = schedule["Target"].isna()
     schedule.loc[mask, "Target"] = "No target"
@@ -543,6 +595,8 @@ def check_if_transits_in_obs_window(
 
         early_start = stop_series - timedelta(hours=20)
         late_start = start_series - timedelta(hours=4)
+
+        start_rng = pd.date_range(early_start.iloc[0], late_start.iloc[0], freq="min")
 
         try:
             ra_tar = float(row["RA"])

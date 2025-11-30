@@ -2,7 +2,9 @@
 
 ## Running the Complete Pipeline
 
-The `run_scheduler.py` script provides a single entry point to run the complete Pandora observation scheduling pipeline from start to finish.
+## Running the Complete Pipeline
+
+The `run_scheduler.py` script is the **main entry point** for the Pandora Scheduler. It runs the complete observation scheduling pipeline from start to finish, handling target manifest generation, visibility calculation, and schedule optimization.
 
 ### Prerequisites
 

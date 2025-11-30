@@ -11,7 +11,7 @@ import tqdm as tqdm
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 
 # Parse the XML file
-fname = f'{PACKAGEDIR}/data/Pandora_science_calendar_102325.xml'
+fname = f'{PACKAGEDIR}/data/Pandora_science_calendar.xml'
 tree = ET.parse(fname)
 root = tree.getroot()
 
@@ -29,7 +29,7 @@ def check_visibility(target, start_time, stop_time):
     # Read visibility data
 
     if target.endswith(('b', 'c', 'd', 'e', 'f')):
-        st_name = target[:-2]
+        st_name = target[:-1]
     else:
         st_name = target
 

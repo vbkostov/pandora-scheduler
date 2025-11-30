@@ -1,6 +1,6 @@
 # Example: Running Full Pipeline with Target Definitions
 
-This example demonstrates running the complete pipeline from target definition files.
+This example demonstrates running the complete pipeline using `run_scheduler.py`, which is the recommended way to execute the scheduler.
 
 ## Setup
 

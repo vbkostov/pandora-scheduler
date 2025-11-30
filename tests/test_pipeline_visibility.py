@@ -23,6 +23,7 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
 
     primary_target_csv = (paths.data_dir / "exoplanet_targets.csv").resolve()
     auxiliary_target_csv = (paths.data_dir / "auxiliary-standard_targets.csv").resolve()
+    occultation_target_csv = (paths.data_dir / "occultation-standard_targets.csv").resolve()
 
     request = SchedulerRequest(
         targets_manifest=package_root / "data" / "baseline" / "fingerprints.json",
@@ -32,10 +33,10 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
         config={"generate_visibility": True},
     )
 
-    captured: dict[str, object] = {}
+    captured_configs: list[VisibilityConfig] = []
 
     def fake_builder(cfg):  # type: ignore[no-untyped-def]
-        captured["config"] = cfg
+        captured_configs.append(cfg)
 
     monkeypatch.setattr(
         "pandorascheduler_rework.pipeline.build_visibility_catalog",
@@ -49,9 +50,12 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
         request.window_end,
         primary_target_csv,
         auxiliary_target_csv,
+        occultation_target_csv,
     )
 
-    visibility_cfg = captured.get("config")
+    assert len(captured_configs) == 3
+    # The first call should be for primary targets
+    visibility_cfg = captured_configs[0]
     assert isinstance(visibility_cfg, VisibilityConfig)
     assert visibility_cfg.window_start == request.window_start
     assert visibility_cfg.window_end == request.window_end
@@ -60,10 +64,7 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
     # repo layout rather than relying on the current working directory.
     expected_gmat = (paths.data_dir / "Pandora-600km-withoutdrag-20251018.txt").resolve()
     assert visibility_cfg.gmat_ephemeris == expected_gmat
-    if auxiliary_target_csv.exists():
-        assert visibility_cfg.partner_list == auxiliary_target_csv
-    else:
-        assert visibility_cfg.partner_list is None
+    assert visibility_cfg.partner_list == auxiliary_target_csv
     assert not visibility_cfg.force
     assert visibility_cfg.target_filters == ()
 
@@ -75,6 +76,7 @@ def test_maybe_generate_visibility_skips_without_flag(monkeypatch, tmp_path):
 
     primary_target_csv = (paths.data_dir / "exoplanet_targets.csv").resolve()
     auxiliary_target_csv = (paths.data_dir / "auxiliary-standard_targets.csv").resolve()
+    occultation_target_csv = (paths.data_dir / "occultation-standard_targets.csv").resolve()
 
     request = SchedulerRequest(
         targets_manifest=package_root / "data" / "baseline" / "fingerprints.json",
@@ -101,6 +103,7 @@ def test_maybe_generate_visibility_skips_without_flag(monkeypatch, tmp_path):
         request.window_end,
         primary_target_csv,
         auxiliary_target_csv,
+        occultation_target_csv,
     )
 
     assert not called
@@ -146,8 +149,9 @@ def test_build_visibility_config_supports_overrides(tmp_path):
         paths,
         request.window_start,
         request.window_end,
-        primary_target_csv,
-        auxiliary_target_csv,
+        target_list=primary_target_csv,
+        partner_list=auxiliary_target_csv,
+        output_subpath="targets",
     )
 
     assert visibility_config.gmat_ephemeris == custom_gmat.resolve()
