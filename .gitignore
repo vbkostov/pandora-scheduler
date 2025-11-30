@@ -1,5 +1,8 @@
 sandbox
 
+# IDE settings
+.vscode/
+
 # Mac things
 .DS_Store
 
