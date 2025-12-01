@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import pandas as pd
 
 from pandorascheduler_rework import observation_utils as rework_helper
+from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
     SchedulerConfig,
@@ -156,7 +157,9 @@ def build_schedule(request: SchedulerRequest) -> SchedulerResult:
         occultation_target_csv,
     )
 
-    target_list = pd.read_csv(primary_target_csv)
+    target_list = read_csv_cached(str(primary_target_csv))
+    if target_list is None:
+        raise FileNotFoundError(f"Primary target manifest not found: {primary_target_csv}")
 
     scheduler_inputs = SchedulerInputs(
         pandora_start=pandora_start,
@@ -227,17 +230,59 @@ def build_schedule_v2(config: PandoraSchedulerConfig) -> SchedulerResult:
     """
     # Convert unified config to old SchedulerRequest for now
     # This provides backward compatibility while we migrate
+
+    # Determine whether we should generate visibility. Default: True when a GMAT ephemeris
+    # is provided, or when explicitly requested via extra_inputs.
+    generate_visibility = bool(config.gmat_ephemeris) or bool(
+        str(config.extra_inputs.get("generate_visibility", "")).lower() in {"1", "true", "yes", "y"}
+    )
+
+    # Build request-level config dict expected by the legacy build_schedule
+    request_config: Dict[str, object] = {
+        "transit_coverage_threshold": config.transit_coverage_min,
+        "schedule_factor_threshold": config.sched_weights[2],  # schedule weight
+        "saa_overlap_threshold": config.saa_overlap_threshold,
+        "generate_visibility": generate_visibility,
+        "visibility_sun_deg": config.sun_avoidance_deg,
+        "visibility_moon_deg": config.moon_avoidance_deg,
+        "visibility_earth_deg": config.earth_avoidance_deg,
+        "visibility_force": config.force_regenerate,
+        "visibility_target_filters": ",".join(config.target_filters) if config.target_filters else None,
+    }
+
+    # Prepare extra_inputs for the legacy pipeline; copy existing extras and add GMAT/target base
+    request_extra_inputs: Dict[str, Path] = dict(config.extra_inputs or {})
+    if config.gmat_ephemeris is not None:
+        request_extra_inputs["visibility_gmat"] = Path(config.gmat_ephemeris)
+    # Ensure target definition base is propagated if present in extra_inputs
+    if "target_definition_base" in request_extra_inputs:
+        request_extra_inputs["target_definition_base"] = Path(request_extra_inputs["target_definition_base"])  # type: ignore[index]
+
+    # When generating target manifests from a provided target definition base,
+    # write the generated CSV manifests into the run's output data directory so
+    # subsequent steps (visibility & calendar generation) can find them there.
+    if config.output_dir is not None:
+        out_data = Path(config.output_dir) / "data"
+        request_extra_inputs.setdefault(
+            "primary_target_csv", out_data / "exoplanet_targets.csv"
+        )
+        request_extra_inputs.setdefault(
+            "auxiliary_target_csv", out_data / "auxiliary-standard_targets.csv"
+        )
+        request_extra_inputs.setdefault(
+            "monitoring_target_csv", out_data / "monitoring-standard_targets.csv"
+        )
+        request_extra_inputs.setdefault(
+            "occultation_target_csv", out_data / "occultation-standard_targets.csv"
+        )
+
     request = SchedulerRequest(
         targets_manifest=config.targets_manifest or Path("."),
         window_start=config.window_start,
         window_end=config.window_end,
         output_dir=config.output_dir or Path("output"),
-        config={
-            "transit_coverage_threshold": config.transit_coverage_min,
-            "schedule_factor_threshold": config.sched_weights[2],  # schedule weight
-            "saa_overlap_threshold": config.saa_overlap_threshold,
-        },
-        extra_inputs=config.extra_inputs,
+        config={k: v for k, v in request_config.items() if v is not None},
+        extra_inputs=request_extra_inputs,
     )
     
     # Call existing build_schedule implementation

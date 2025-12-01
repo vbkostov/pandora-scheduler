@@ -14,6 +14,7 @@ from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.time import Time
 
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.utils.io import read_csv_cached
 
 from .config import VisibilityConfig
 from .geometry import (
@@ -103,7 +104,9 @@ def _load_target_manifest(
     manifest_path: Path,
     filters: Iterable[str],
 ) -> pd.DataFrame:
-    manifest = pd.read_csv(manifest_path)
+    manifest = read_csv_cached(str(manifest_path))
+    if manifest is None:
+        raise FileNotFoundError(f"Target manifest missing: {manifest_path}")
     if filters:
         manifest = manifest[manifest["Star Name"].isin(filters)]
     required_columns = {"Star Name", "Star Simbad Name"}
@@ -281,7 +284,11 @@ def _compute_planet_transits(
     star_metadata: dict[str, tuple[float, float]],
     observer_location: EarthLocation,
 ) -> pd.DataFrame:
-    star_visibility = pd.read_csv(star_visibility_path)
+    star_visibility = read_csv_cached(str(star_visibility_path))
+    if star_visibility is None or star_visibility.empty:
+        raise FileNotFoundError(
+            f"Star visibility missing or empty for {star_visibility_path}"
+        )
     t_mjd = star_visibility["Time(MJD_UTC)"].to_numpy(dtype=float)
     visible_mask = star_visibility["Visible"].to_numpy(dtype=float)
 
@@ -436,8 +443,10 @@ def _apply_transit_overlaps(
         for planet in planets:
             planet_path = output_root / star_name / planet / f"Visibility for {planet}.csv"
             if not planet_path.exists():
-                continue
-            df = pd.read_csv(planet_path)
+                raise FileNotFoundError(f"Expected planet visibility missing: {planet_path}")
+            df = read_csv_cached(str(planet_path))
+            if df is None or df.empty:
+                raise FileNotFoundError(f"Unable to read planet visibility: {planet_path}")
             planet_data[planet] = df
             sets: list[tuple[set, int]] = []
             for _, row in df.iterrows():

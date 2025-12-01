@@ -32,10 +32,10 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework.targets.manifest import build_target_manifest
-from pandorascheduler_rework.io_utils import (
-    read_csv_cached,
+from pandorascheduler_rework.utils.io import (
     build_visibility_path,
     build_star_visibility_path,
+    read_csv_cached,
 )
 from pandorascheduler_rework.utils.array_ops import (
     remove_short_sequences,
@@ -872,7 +872,7 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
 # Regex pattern moved to utils.string_ops
 
 
-# Path building functions moved to io_utils (imported above)
+# Path building functions moved to utils.io (imported above)
 
 
 # remove_suffix moved to utils.string_ops (imported above)

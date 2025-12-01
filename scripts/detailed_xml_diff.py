@@ -187,6 +187,6 @@ def compare_xmls(legacy_path, rework_path):
 
 if __name__ == "__main__":
     legacy_xml = Path("src/pandorascheduler/data/Pandora_science_calendar.xml")
-    rework_xml = Path("output_standalone/Pandora_science_calendar.xml")
+    rework_xml = Path("output_standalone/data/Pandora_science_calendar.xml")
     
     compare_xmls(legacy_xml, rework_xml)

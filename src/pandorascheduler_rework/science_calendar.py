@@ -31,7 +31,7 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.io_utils import read_csv_cached
+from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.utils import time as time_utils
 
 
@@ -88,7 +88,9 @@ class _ScienceCalendarBuilder:
     def __init__(self, inputs: ScienceCalendarInputs, config: ScienceCalendarConfig) -> None:
         self.inputs = inputs
         self.config = config
-        self.schedule = pd.read_csv(inputs.schedule_csv)
+        self.schedule = read_csv_cached(str(inputs.schedule_csv))
+        if self.schedule is None:
+            raise FileNotFoundError(f"Schedule CSV missing: {inputs.schedule_csv}")
 
         if self.schedule.empty:
             raise ValueError("Schedule CSV is empty; nothing to convert into XML")
@@ -439,7 +441,10 @@ class _ScienceCalendarBuilder:
 def _read_catalog(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Required target catalog missing: {path}")
-    return pd.read_csv(path)
+    df = read_csv_cached(str(path))
+    if df is None:
+        raise FileNotFoundError(f"Unable to read catalog: {path}")
+    return df
 
 
 def _normalise_target_name(target: str) -> tuple[str, str]:
@@ -696,7 +701,7 @@ def _build_occultation_schedule(
     occ_df = pd.DataFrame(schedule_rows, columns=["Target", "start", "stop", "RA", "DEC"])
 
     try:
-        occ_list = pd.read_csv(list_path)
+        occ_list = read_csv_cached(str(list_path))
     except FileNotFoundError:
         LOGGER.warning("Occultation list missing: %s", list_path)
         return None, False

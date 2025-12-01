@@ -15,7 +15,7 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.io_utils import read_csv_cached
+from pandorascheduler_rework.utils.io import read_csv_cached
 
 
 logger = logging.getLogger(__name__)
@@ -335,11 +335,15 @@ def _initialize_tracker(
 
     archive_path = inputs.paths.data_dir / "Pandora_archive.csv"
     if archive_path.exists():
-        archive = pd.read_csv(archive_path)
-        for _, row in archive.iterrows():
-            mask = tracker["Planet Name"] == row["Target"]
-            tracker.loc[mask, "Transits Needed"] -= 1
-            tracker.loc[mask, "Transits Acquired"] += 1
+        try:
+            archive = pd.read_csv(archive_path)
+        except Exception:
+            archive = None
+        if archive is not None:
+            for _, row in archive.iterrows():
+                mask = tracker["Planet Name"] == row["Target"]
+                tracker.loc[mask, "Transits Needed"] -= 1
+                tracker.loc[mask, "Transits Acquired"] += 1
 
     transits_left_lifetime: list[int] = []
     transits_left_schedule: list[int] = []
@@ -351,7 +355,17 @@ def _initialize_tracker(
         visibility_path = observation_utils.build_visibility_path(
             inputs.paths.targets_dir, star_name, planet_name
         )
-        planet_data = pd.read_csv(visibility_path)
+        planet_data = None
+        try:
+            planet_data = read_csv_cached(str(visibility_path))
+        except Exception:
+            planet_data = None
+
+        if planet_data is None:
+            raise FileNotFoundError(
+                f"Visibility file missing or unreadable for planet {planet_name} (expected at {visibility_path})"
+            )
+
         planet_data = planet_data.drop(
             planet_data.index[
                 planet_data["Transit_Coverage"] < config.transit_coverage_min
