@@ -31,6 +31,7 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.io_utils import read_csv_cached
 from pandorascheduler_rework.utils import time as time_utils
 
 
@@ -526,30 +527,10 @@ def _lookup_occultation_info(
     return None
 
 
-@lru_cache(maxsize=64)
-def _read_csv_cached(file_path: str) -> Optional[pd.DataFrame]:
-    """Read CSV file with LRU caching (max ~1.5 GB memory).
-    
-    Args:
-        file_path: String path to CSV file (must be string for caching)
-    
-    Returns:
-        DataFrame or None if file doesn't exist or error occurs
-    """
-    path = Path(file_path)
-    if not path.exists():
-        return None
-    try:
-        return pd.read_csv(path)
-    except Exception as e:
-        LOGGER.error(f"Error reading {path}: {e}")
-        return None
-
-
 def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     """Read star visibility file with caching."""
     path = directory / f"Visibility for {name}.csv"
-    df = _read_csv_cached(str(path))
+    df = read_csv_cached(str(path))
     if df is None:
         LOGGER.debug("Visibility file missing for %s", name)
         return None
@@ -561,7 +542,7 @@ def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
 def _read_planet_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     """Read planet visibility file with caching."""
     path = directory / f"Visibility for {name}.csv"
-    df = _read_csv_cached(str(path))
+    df = read_csv_cached(str(path))
     if df is None:
         LOGGER.debug("Planet visibility file missing for %s", name)
     return df

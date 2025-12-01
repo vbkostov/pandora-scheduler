@@ -32,6 +32,19 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework.targets.manifest import build_target_manifest
+from pandorascheduler_rework.io_utils import (
+    read_csv_cached,
+    build_visibility_path,
+    build_star_visibility_path,
+)
+from pandorascheduler_rework.utils.array_ops import (
+    remove_short_sequences,
+    break_long_sequences,
+)
+from pandorascheduler_rework.utils.string_ops import (
+    remove_suffix,
+    target_identifier as _target_identifier,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -86,37 +99,9 @@ def observation_sequence(
     return sequence_element
 
 
-def remove_short_sequences(array, sequence_too_short: int):
-    cleaned = np.asarray(array, dtype=float).copy()
-    start_index = None
-    spans: List[Tuple[int, int]] = []
-
-    for idx, value in enumerate(cleaned):
-        if value == 1 and start_index is None:
-            start_index = idx
-            continue
-        if value == 0 and start_index is not None:
-            if idx - start_index < sequence_too_short:
-                spans.append((start_index, idx - 1))
-            start_index = None
-
-    if start_index is not None and len(cleaned) - start_index < sequence_too_short:
-        spans.append((start_index, len(cleaned) - 1))
-
-    for start_idx, stop_idx in spans:
-        cleaned[start_idx : stop_idx + 1] = 0.0
-
-    return cleaned, spans
-
-
-def break_long_sequences(start, end, step: timedelta):
-    ranges: List[Tuple[datetime, datetime]] = []
-    current = start
-    while current < end:
-        next_val = min(current + step, end)
-        ranges.append((current, next_val))
-        current = next_val
-    return ranges
+# Array utilities moved to utils.array_ops
+# remove_short_sequences - imported from utils.array_ops
+# break_long_sequences - imported from utils.array_ops
 
 
 def _observational_parameters(target_name, priority, start, stop, ra, dec):
@@ -325,16 +310,7 @@ def _populate_vda_parameters(payload_parameters, targ_info: pd.DataFrame, diff_i
             continue
 
 
-def _target_identifier(row: pd.Series) -> str:
-    planet = row.get("Planet Name") if isinstance(row, pd.Series) else None
-    if planet is not None and pd.notna(planet):
-        return re.sub(r"\s+([A-Za-z])$", r"\1", str(planet))
-
-    star = row.get("Star Name") if isinstance(row, pd.Series) else None
-    if star is not None and pd.notna(star):
-        return str(star)
-
-    return ""
+# _target_identifier moved to utils.string_ops (imported above)
 
 
 def schedule_occultation_targets(
@@ -694,8 +670,8 @@ def check_if_transits_in_obs_window(
             )
             continue
 
-        planet_data = pd.read_csv(visibility_file)
-        if planet_data.empty:
+        planet_data = read_csv_cached(str(visibility_file))
+        if planet_data is None or planet_data.empty:
             continue
 
         planet_data = planet_data.drop(
@@ -893,41 +869,13 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
     return output_path
 
 
-# Pre-compile regex pattern for performance
-_PLANET_SUFFIX_PATTERN = re.compile(r"\s+[a-z]$", flags=re.ASCII)
+# Regex pattern moved to utils.string_ops
 
 
-def build_visibility_path(base_dir: Path, star_name: str, target_name: str) -> Path:
-    """Build consistent visibility file path.
-    
-    Centralizes the pattern: base_dir / star_name / target_name / "Visibility for {target_name}.csv"
-    Used throughout scheduler to avoid repeated f-string formatting.
-    """
-    return base_dir / star_name / target_name / f"Visibility for {target_name}.csv"
+# Path building functions moved to io_utils (imported above)
 
 
-def build_star_visibility_path(base_dir: Path, star_name: str) -> Path:
-    """Build visibility path for a star (no planet subdirectory).
-    
-    Pattern: base_dir / star_name / "Visibility for {star_name}.csv"
-    """
-    return base_dir / star_name / f"Visibility for {star_name}.csv"
-
-
-def remove_suffix(value: str) -> str:
-    """Return *value* with a trailing " planet suffix" removed.
-
-    The legacy helper accepted identifiers like ``"WASP-107 b"`` and stripped the
-    final ``" b"`` so that callers could recover the stellar host name.  The
-    `rework` pipeline relies on the same behaviour when looking up per-star
-    visibility files.  Reimplement the logic locally to avoid importing the
-    legacy module for such a small utility.
-    """
-
-    if not value:
-        return value
-
-    return _PLANET_SUFFIX_PATTERN.sub("", value)
+# remove_suffix moved to utils.string_ops (imported above)
 
 
 @functools.lru_cache(maxsize=32)

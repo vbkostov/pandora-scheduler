@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import pandas as pd
 
 from pandorascheduler_rework import observation_utils as rework_helper
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
     SchedulerConfig,
     SchedulerInputs,
@@ -194,6 +195,56 @@ def build_schedule(request: SchedulerRequest) -> SchedulerResult:
         reports=reports,
         diagnostics=diagnostics,
     )
+
+
+def build_schedule_v2(config: PandoraSchedulerConfig) -> SchedulerResult:
+    """Run the scheduler with unified configuration (V2 API).
+    
+    This is the new, simplified API that uses PandoraSchedulerConfig instead of
+    the dict-based SchedulerRequest. It provides clearer configuration with
+    validation and better documentation.
+    
+    Args:
+        config: Unified configuration object
+        
+    Returns:
+        SchedulerResult with paths to generated files
+        
+    Example:
+        >>> from pandorascheduler_rework.config import PandoraSchedulerConfig
+        >>> from datetime import datetime
+        >>> from pathlib import Path
+        >>> 
+        >>> config = PandoraSchedulerConfig(
+        ...     window_start=datetime(2026, 2, 5),
+        ...     window_end=datetime(2027, 2, 5),
+        ...     targets_manifest=Path("../PandoraTargetList/target_definition_files"),
+        ...     output_dir=Path("output"),
+        ...     transit_coverage_min=0.2,
+        ...     show_progress=True,
+        ... )
+        >>> result = build_schedule_v2(config)
+    """
+    # Convert unified config to old SchedulerRequest for now
+    # This provides backward compatibility while we migrate
+    request = SchedulerRequest(
+        targets_manifest=config.targets_manifest or Path("."),
+        window_start=config.window_start,
+        window_end=config.window_end,
+        output_dir=config.output_dir or Path("output"),
+        config={
+            "transit_coverage_threshold": config.transit_coverage_min,
+            "schedule_factor_threshold": config.sched_weights[2],  # schedule weight
+            "saa_overlap_threshold": config.saa_overlap_threshold,
+        },
+        extra_inputs=config.extra_inputs,
+    )
+    
+    # Call existing build_schedule implementation
+    return build_schedule(request)
+
+
+
 
 
 def _maybe_generate_visibility(

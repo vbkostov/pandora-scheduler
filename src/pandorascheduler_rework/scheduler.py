@@ -15,6 +15,7 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.io_utils import read_csv_cached
 
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,10 @@ def run_scheduler(inputs: SchedulerInputs, config: SchedulerConfig) -> Scheduler
 
     too_targets, too_starts, too_stops = _load_too_table(inputs.paths.data_dir)
 
+    # Pre-load all transit windows once
+    all_planet_names = state.tracker["Planet Name"].dropna().unique()
+    transit_windows = _load_planet_transit_windows(pd.Index(all_planet_names), inputs)
+
     while stop <= sched_stop:
         state.tracker = state.tracker.sort_values(
             by=["Primary Target", "Transit Priority"],
@@ -203,6 +208,7 @@ def run_scheduler(inputs: SchedulerInputs, config: SchedulerConfig) -> Scheduler
             state,
             inputs,
             config,
+            transit_windows,
         )
         if too_result is not None:
             too_df, new_start = too_result
@@ -448,15 +454,15 @@ def _load_planet_transit_windows(
         planet_str = str(planet_name)
         star_name = observation_utils.remove_suffix(planet_str)
         try:
-            planet_visibility = pd.read_csv(
-                observation_utils.build_visibility_path(
+            planet_visibility = read_csv_cached(
+                str(observation_utils.build_visibility_path(
                     inputs.paths.targets_dir, star_name, planet_str
-                )
+                ))
             )
         except FileNotFoundError:
             continue
 
-        if planet_visibility.empty:
+        if planet_visibility is None or planet_visibility.empty:
             continue
 
         start_transit = Time(
@@ -484,6 +490,7 @@ def _handle_targets_of_opportunity(
     state: SchedulerState,
     inputs: SchedulerInputs,
     config: SchedulerConfig,
+    transit_windows: dict[str, tuple[datetime, datetime]],
 ) -> Optional[tuple[pd.DataFrame, datetime]]:
     if not targets:
         return None
@@ -513,8 +520,8 @@ def _handle_targets_of_opportunity(
     forced_observation = False
 
     # Batch-load all transit windows once
-    all_active_names = tracker.loc[positive_needed].index
-    transit_windows = _load_planet_transit_windows(all_active_names, inputs)
+    # all_active_names = tracker.loc[positive_needed].index
+    # transit_windows = _load_planet_transit_windows(all_active_names, inputs)
 
     for planet_name in critical_planets.index:
         if planet_name not in transit_windows:
@@ -647,10 +654,14 @@ def _schedule_auxiliary_target(
         and active_start + obs_std_duration < stop
     ):
         std_path = inputs.paths.data_dir / "monitoring-standard_targets.csv"
-        std_df = pd.read_csv(std_path).sort_values(
-            "Priority", ascending=False, ignore_index=True
-        )
-        std_records = std_df.to_dict(orient="records")
+        std_df = read_csv_cached(str(std_path))
+        if std_df is not None:
+            std_df = std_df.sort_values(
+                "Priority", ascending=False, ignore_index=True
+            )
+            std_records = std_df.to_dict(orient="records")
+        else:
+            std_records = []
 
         std_candidate: Optional[tuple[str, float, float, float]] = None
         for std_row in std_records:
@@ -659,8 +670,11 @@ def _schedule_auxiliary_target(
                 inputs.paths.aux_targets_dir, std_name
             )
             try:
-                vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
+                vis = read_csv_cached(str(vis_file))
             except FileNotFoundError:
+                continue
+            
+            if vis is None:
                 continue
 
             vis_times = Time(
@@ -743,7 +757,10 @@ def _schedule_auxiliary_target(
         if not aux_csv.exists():
             continue
 
-        aux_targets = pd.read_csv(aux_csv).reset_index(drop=True)
+        aux_targets = read_csv_cached(str(aux_csv))
+        if aux_targets is None:
+            continue
+        aux_targets = aux_targets.reset_index(drop=True)
 
         mask = aux_targets["Star Name"].isin(non_primary_priorities.keys())
         if mask.any():
@@ -770,8 +787,11 @@ def _schedule_auxiliary_target(
                 inputs.paths.aux_targets_dir, name
             )
             try:
-                vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
+                vis = read_csv_cached(str(vis_file))
             except FileNotFoundError:
+                continue
+            
+            if vis is None:
                 continue
 
             vis_times = Time(

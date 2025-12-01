@@ -74,6 +74,8 @@ src/pandorascheduler/data/*.xml
 
 # Temporary output directories
 output_standalone/temp/
+output_standalone_old/
+output*/
 
 # Other large data files
 src/pandorascheduler/data/GMAT_pandora_600_20240512.txt
