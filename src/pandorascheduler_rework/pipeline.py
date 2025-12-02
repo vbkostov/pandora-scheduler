@@ -315,7 +315,7 @@ def _build_visibility_config(
 
     gmat_path = config.gmat_ephemeris or extra_inputs.get("visibility_gmat")
     if gmat_path is None:
-        raise ValueError("gmat_ephemeris required for visibility generation")
+        raise ValueError("gmat_ephemeris is required for visibility generation")
 
     target_list_path = extra_inputs.get("visibility_target_list") or target_list
 
