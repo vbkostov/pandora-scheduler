@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.io import read_csv_cached
+from pandorascheduler_rework.utils.string_ops import remove_suffix
 
 
 logger = logging.getLogger(__name__)
@@ -372,6 +373,12 @@ def _initialize_tracker(
             ]
         ).reset_index(drop=True)
 
+        # If no transits remain after filtering, skip this planet
+        if planet_data.empty or len(planet_data) == 0:
+            transits_left_lifetime.append(0)
+            transits_left_schedule.append(0)
+            continue
+
         start_transits = Time(
             planet_data["Transit_Start"], format="mjd", scale="utc"
         ).to_value("datetime")
@@ -466,7 +473,7 @@ def _load_planet_transit_windows(
     
     for planet_name in planet_names:
         planet_str = str(planet_name)
-        star_name = observation_utils.remove_suffix(planet_str)
+        star_name = remove_suffix(planet_str)
         try:
             planet_visibility = read_csv_cached(
                 str(observation_utils.build_visibility_path(
@@ -476,7 +483,7 @@ def _load_planet_transit_windows(
         except FileNotFoundError:
             continue
 
-        if planet_visibility is None or planet_visibility.empty:
+        if planet_visibility is None or planet_visibility.empty or len(planet_visibility) == 0:
             continue
 
         start_transit = Time(
@@ -688,7 +695,8 @@ def _schedule_auxiliary_target(
             except FileNotFoundError:
                 continue
             
-            if vis is None:
+            
+            if vis is None or vis.empty or len(vis) == 0:
                 continue
 
             vis_times = Time(
@@ -805,7 +813,7 @@ def _schedule_auxiliary_target(
             except FileNotFoundError:
                 continue
             
-            if vis is None:
+            if vis is None or vis.empty or len(vis) == 0:
                 continue
 
             vis_times = Time(

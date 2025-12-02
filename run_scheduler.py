@@ -262,9 +262,17 @@ def create_scheduler_config(
         raw_transit_weights = tuple(float(x.strip()) for x in raw_transit_weights.split(","))
     transit_weights_tuple = tuple(float(x) for x in raw_transit_weights)
 
-    extra_inputs: Dict[str, Path] = {}
+    extra_inputs: Dict[str, Any] = {}
     if target_def_base:
         extra_inputs["target_definition_base"] = Path(target_def_base)
+        # When target definitions are provided, we need to specify which categories to process.
+        # These map to the standard directory names in the PandoraTargetList repository.
+        extra_inputs["target_definition_files"] = [
+            "exoplanet",
+            "auxiliary-standard",
+            "monitoring-standard",
+            "occultation-standard",
+        ]
 
     # Visibility GMAT goes into the typed field `gmat_ephemeris` on the config
     if visibility_gmat is None:

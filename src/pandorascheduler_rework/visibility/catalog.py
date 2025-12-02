@@ -445,8 +445,11 @@ def _apply_transit_overlaps(
             if not planet_path.exists():
                 raise FileNotFoundError(f"Expected planet visibility missing: {planet_path}")
             df = read_csv_cached(str(planet_path))
-            if df is None or df.empty:
+            if df is None:
                 raise FileNotFoundError(f"Unable to read planet visibility: {planet_path}")
+            # Skip planets with no transits (empty DataFrame except for headers)
+            if df.empty:
+                continue
             planet_data[planet] = df
             sets: list[tuple[set, int]] = []
             for _, row in df.iterrows():
