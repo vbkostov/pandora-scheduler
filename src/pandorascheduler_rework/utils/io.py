@@ -60,6 +60,11 @@ def read_csv_cached(file_path: str) -> Optional[pd.DataFrame]:
         return None
 
 
+# Expose cache methods from the underlying cached function for testing/monitoring
+read_csv_cached.cache_clear = _read_csv_with_mtime.cache_clear
+read_csv_cached.cache_info = _read_csv_with_mtime.cache_info
+
+
 def build_visibility_path(base_dir: Path, star_name: str, target_name: str) -> Path:
     """Build consistent visibility file path for planets.
     
