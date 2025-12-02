@@ -38,7 +38,7 @@ def main():
     print(f"Config created:")
     print(f"  Period: {config.window_start} to {config.window_end}")
     print(f"  Transit coverage min: {config.transit_coverage_min}")
-    print(f"  Weights: {config.sched_weights}")
+    print(f"  Weights: {config.transit_scheduling_weights}")
     print()
     
     # Note: This will fail if visibility doesn't exist

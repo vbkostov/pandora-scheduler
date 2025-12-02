@@ -375,7 +375,7 @@ def check_if_transits_in_obs_window(
     sched_stop: datetime,
     obs_rng: pd.DatetimeIndex,
     obs_window: timedelta,
-    sched_wts: Sequence[float],
+    transit_scheduling_weights: Sequence[float],
     transit_coverage_min: float,
 ):
 
@@ -500,9 +500,9 @@ def check_if_transits_in_obs_window(
             transit_coverage = float(coverage_values[j])
             saa_overlap = float(saa_values[j])
             quality_factor = (
-                (sched_wts[0] * transit_coverage)
-                + (sched_wts[1] * (1 - saa_overlap))
-                + (sched_wts[2] * schedule_factor)
+                (transit_scheduling_weights[0] * transit_coverage)
+                + (transit_scheduling_weights[1] * (1 - saa_overlap))
+                + (transit_scheduling_weights[2] * schedule_factor)
             )
 
             candidate = pd.DataFrame(

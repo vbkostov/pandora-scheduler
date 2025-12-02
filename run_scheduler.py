@@ -309,7 +309,7 @@ def main() -> int:
                 json_config = json.load(f)
         
         # Default weights if not provided
-        sched_weights = (0.8, 0.0, 0.2)
+        transit_scheduling_weights = (0.8, 0.0, 0.2)
         
         # Resolve target definition base
         target_def_base = args.target_definitions
@@ -344,7 +344,7 @@ def main() -> int:
         # Coerce unified transit_scheduling_weights from JSON or CLI into a 3-tuple
         raw_transit_weights = (
             json_config.get("transit_scheduling_weights")
-            or sched_weights
+            or transit_scheduling_weights
         )
         if isinstance(raw_transit_weights, str):
             raw_transit_weights = tuple(float(x.strip()) for x in raw_transit_weights.split(","))
