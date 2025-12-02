@@ -380,25 +380,43 @@ def _initialize_tracker(
 
         # Use pre-converted datetime if available (performance optimization)
         if "Transit_Start_UTC" in planet_data.columns:
-            start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"]).to_numpy()
+            try:
+                start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"]).to_numpy()
+            except Exception as e:
+                raise ValueError(f"Failed to parse Transit_Start_UTC for {planet_name}: {e}")
         else:
             # Fallback to MJD conversion for backward compatibility
-            start_transits = Time(
-                planet_data["Transit_Start"], format="mjd", scale="utc"
-            ).to_value("datetime")
+            try:
+                start_transits = pd.to_datetime(Time(
+                    planet_data["Transit_Start"], format="mjd", scale="utc"
+                ).to_datetime()).to_numpy()
+            except Exception as e:
+                raise ValueError(f"Failed to convert Transit_Start MJD for {planet_name}: {e}")
         
         if "Transit_Stop_UTC" in planet_data.columns:
-            end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"]).to_numpy()
+            try:
+                end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"]).to_numpy()
+            except Exception as e:
+                raise ValueError(f"Failed to parse Transit_Stop_UTC for {planet_name}: {e}")
         else:
             # Fallback to MJD conversion for backward compatibility
-            end_transits = Time(
-                planet_data["Transit_Stop"], format="mjd", scale="utc"
-            ).to_value("datetime")
+            try:
+                end_transits = pd.to_datetime(Time(
+                    planet_data["Transit_Stop"], format="mjd", scale="utc"
+                ).to_datetime()).to_numpy()
+            except Exception as e:
+                raise ValueError(f"Failed to convert Transit_Stop MJD for {planet_name}: {e}")
 
-        lifetime_mask = (pandora_start <= start_transits) & (
-            end_transits <= pandora_stop
+        # Ensure pandora_start/stop are compatible with numpy datetime64 arrays
+        p_start = pd.to_datetime(pandora_start).to_numpy()
+        p_stop = pd.to_datetime(pandora_stop).to_numpy()
+        s_start = pd.to_datetime(sched_start).to_numpy()
+        s_stop = pd.to_datetime(sched_stop).to_numpy()
+
+        lifetime_mask = (p_start <= start_transits) & (
+            end_transits <= p_stop
         )
-        schedule_mask = (sched_start <= start_transits) & (end_transits <= sched_stop)
+        schedule_mask = (s_start <= start_transits) & (end_transits <= s_stop)
 
         transits_left_lifetime.append(int(np.count_nonzero(lifetime_mask)))
         transits_left_schedule.append(int(np.count_nonzero(schedule_mask)))

@@ -52,15 +52,7 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
 
     expected_gmat = gmat.resolve()
 
-    config = PandoraSchedulerConfig(
-        targets_manifest=primary_target_csv,
-        window_start=datetime(2026, 2, 5),
-        window_end=datetime(2027, 2, 5),
-        output_dir=tmp_path,
-        extra_inputs={"generate_visibility": Path("true")}, # Hack to simulate legacy flag behavior via extra_inputs if needed, or better yet, use gmat_ephemeris
-        # Actually, the logic in pipeline.py checks config.gmat_ephemeris OR extra_inputs['generate_visibility']
-        # Let's use gmat_ephemeris to trigger it cleanly if possible, or just the flag.
-    )
+
     # Re-instantiate with explicit flag for this test since we want to test the flag logic
     # Also provide the temporary GMAT via extra_inputs so the visibility builder can be configured
     config = PandoraSchedulerConfig(

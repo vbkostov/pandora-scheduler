@@ -193,11 +193,7 @@ class TestBackwardCompatibility:
     def test_v2_produces_same_structure_as_v1(self):
         """Test that v2 API produces same result structure as v1."""
         # This is a structural test - both APIs should return SchedulerResult
-        config = PandoraSchedulerConfig(
-            window_start=datetime(2026, 2, 5),
-            window_end=datetime(2026, 2, 19),
-            targets_manifest=Path("data"),
-        )
+
         
         # build_schedule_v2 should return SchedulerResult
         # (actual execution skipped without test data)
