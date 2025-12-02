@@ -68,10 +68,26 @@ def observation_sequence(
 
 def _build_observational_parameters(target_name, priority, start, stop, ra, dec):
     """Build dictionary of observational parameters."""
-    try:
-        start_format = datetime.strftime(start, "%Y-%m-%dT%H:%M:%SZ")
-        stop_format = datetime.strftime(stop, "%Y-%m-%dT%H:%M:%SZ")
-    except (TypeError, ValueError, AttributeError):
+    def _to_datetime(val):
+        if isinstance(val, datetime):
+            return val
+        if isinstance(val, str):
+            # Try common ISO-like formats used in the project
+            for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(val, fmt)
+                except ValueError:
+                    continue
+        return None
+
+    start_dt = _to_datetime(start)
+    stop_dt = _to_datetime(stop)
+
+    if start_dt and stop_dt:
+        start_format = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        stop_format = stop_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        # Fallback: use provided values as-is
         start_format, stop_format = start, stop
 
     try:
@@ -90,15 +106,19 @@ def _build_observational_parameters(target_name, priority, start, stop, ra, dec)
 
 def _duration_in_seconds(start, stop) -> float:
     """Calculate duration in seconds between start and stop times."""
-    if isinstance(stop, datetime) and isinstance(start, datetime):
-        return (stop - start).total_seconds()
+    def _to_datetime(val):
+        if isinstance(val, datetime):
+            return val
+        if isinstance(val, str):
+            for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(val, fmt)
+                except ValueError:
+                    continue
+        return None
 
-    if isinstance(stop, str) and isinstance(start, str):
-        try:
-            stop_dt = datetime.strptime(stop, "%Y-%m-%dT%H:%M:%SZ")
-            start_dt = datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ")
-            return (stop_dt - start_dt).total_seconds()
-        except (ValueError, TypeError):
-            return 0.0
-
+    start_dt = _to_datetime(start)
+    stop_dt = _to_datetime(stop)
+    if start_dt and stop_dt:
+        return (stop_dt - start_dt).total_seconds()
     return 0.0

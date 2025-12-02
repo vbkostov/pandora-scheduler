@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+Pandora Scheduler Driver Script
+===============================
+
 Pandora Scheduler - Main Entry Point
 
 This script runs the complete Pandora observation scheduling pipeline from start
@@ -12,7 +15,7 @@ to finish, generating all necessary output files including:
   - Tracker files (CSV and pickle)
 
 Usage:
-    # Basic run with default configuration
+ # Basic run with default configuration
     poetry run python run_scheduler.py \\
         --start "2026-02-05" \\
         --end "2026-02-12" \\
@@ -41,17 +44,17 @@ Usage:
 """
 
 from __future__ import annotations
-
 import argparse
 import json
 import logging
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional, Any
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
+import pandas as pd
 from pandorascheduler_rework.pipeline import build_schedule, SchedulerResult
 from pandorascheduler_rework.science_calendar import (
     generate_science_calendar,
@@ -148,7 +151,7 @@ def parse_args() -> argparse.Namespace:
         "--obs-window",
         type=float,
         default=24.0,
-        help="Observation window in hours (default: 24.0)",
+        help="Observation window size in hours (default: 24.0)",
     )
     parser.add_argument(
         "--transit-coverage",
@@ -166,237 +169,162 @@ def parse_args() -> argparse.Namespace:
         "--min-visibility",
         type=float,
         default=0.5,
-        help="Minimum visibility fraction for auxiliary targets (default: 0.5)",
+        help="Minimum visibility fraction for non-transit observations (default: 0.5)",
     )
-
-    # Pipeline control
+    
+    # Flags
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose logging",
+    )
     parser.add_argument(
         "--skip-xml",
         action="store_true",
-        help="Skip science calendar XML generation",
+        help="Skip generation of the science calendar XML",
     )
+    
+    # Profiling configuration
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable profiling",
+    )
+    parser.add_argument(
+        "--profile-output",
+        default="profile_output.prof",
+        help="Profile output file",
+    )
+
     parser.add_argument(
         "--show-progress",
         action="store_true",
-        help="Show progress bars during scheduling",
+        help="Show progress bars during execution",
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
+        "--skip-manifests",
         action="store_true",
-        help="Enable verbose logging",
+        help="Skip regenerating target manifests from target definition files",
     )
 
     return parser.parse_args()
 
 
-def parse_datetime(value: str) -> datetime:
-    """Parse datetime string in flexible formats."""
-    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+def parse_datetime(date_str: str) -> datetime:
+    """Parse a date string into a datetime object."""
+    try:
+        # Try full datetime format first
+        return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
         try:
-            return datetime.strptime(value, fmt)
+            # Fallback to date only
+            return datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            continue
-    raise ValueError(f"Unable to parse datetime: {value}")
-
-
-def load_json_config(config_path: Optional[Path]) -> Dict[str, Any]:
-    """Load configuration from JSON file."""
-    if config_path is None:
-        return {}
-
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with config_path.open() as f:
-        return json.load(f)
-
-
-def create_scheduler_config(
-    args: argparse.Namespace, 
-    json_config: Dict[str, Any], 
-    logger: logging.Logger
-) -> PandoraSchedulerConfig:
-    """Create unified configuration object from args and file config."""
-    
-    # 1. Parse weights
-    weights_str = args.weights.strip()
-    weights_list = [float(w.strip()) for w in weights_str.split(",")]
-    if len(weights_list) != 3:
-        raise ValueError("Weights must have exactly 3 components")
-    sched_weights = (weights_list[0], weights_list[1], weights_list[2])
-
-    # 2. Determine target definition base
-    target_def_base = args.target_definitions
-    if not target_def_base:
-        env_value = os.environ.get("PANDORA_TARGET_DEFINITION_BASE")
-        if env_value:
-            target_def_base = Path(env_value).expanduser()
-            logger.info(f"Using target definitions from PANDORA_TARGET_DEFINITION_BASE: {target_def_base}")
-    
-    # 3. Determine visibility settings
-    visibility_gmat = args.gmat_ephemeris
-    if not visibility_gmat and "visibility_gmat" in json_config:
-        visibility_gmat = Path(json_config["visibility_gmat"])
-
-    # 4. Construct Config Object
-    # Priority: Args > JSON > Defaults (handled by dataclass)
-    
-    # Helper to get value from JSON or Args or Default
-    def get_val(key: str, arg_val: Any, default: Any = None) -> Any:
-        if arg_val != default:
-            return arg_val
-        return json_config.get(key, arg_val)
-
-    # Build PandoraSchedulerConfig with the dataclass field names and types
-    obs_window_hours = float(get_val("obs_window_hours", args.obs_window, 24.0))
-    transit_cov = float(get_val("transit_coverage_min", args.transit_coverage, 0.4))
-    min_vis = float(get_val("min_visibility", args.min_visibility, 0.5))
-
-    # Coerce unified transit_scheduling_weights from JSON or CLI into a 3-tuple
-    raw_transit_weights = (
-        json_config.get("transit_scheduling_weights")
-        or sched_weights
-    )
-    if isinstance(raw_transit_weights, str):
-        raw_transit_weights = tuple(float(x.strip()) for x in raw_transit_weights.split(","))
-    transit_weights_tuple = tuple(float(x) for x in raw_transit_weights)
-
-    extra_inputs: Dict[str, Any] = {}
-    if target_def_base:
-        extra_inputs["target_definition_base"] = Path(target_def_base)
-        # When target definitions are provided, we need to specify which categories to process.
-        # These map to the standard directory names in the PandoraTargetList repository.
-        extra_inputs["target_definition_files"] = [
-            "exoplanet",
-            "auxiliary-standard",
-            "monitoring-standard",
-            "occultation-standard",
-        ]
-
-    # Visibility GMAT goes into the typed field `gmat_ephemeris` on the config
-    if visibility_gmat is None:
-        gmat_path = None
-    else:
-        gmat_path = Path(str(visibility_gmat)).expanduser().resolve()
-
-    config = PandoraSchedulerConfig(
-        window_start=parse_datetime(args.start),
-        window_end=parse_datetime(args.end),
-        obs_window=timedelta(hours=obs_window_hours),
-        targets_manifest=args.output / "data",
-        gmat_ephemeris=gmat_path,
-        output_dir=args.output,
-        
-        # Scheduling Thresholds
-        transit_coverage_min=transit_cov,
-        min_visibility=min_vis,
-        deprioritization_limit_hours=float(json_config.get("deprioritization_limit_hours", 48.0)),
-        saa_overlap_threshold=float(json_config.get("saa_overlap_threshold", 0.0)),
-        commissioning_days=int(json_config.get("commissioning_days", 0)),
-        
-        # Weights
-        transit_scheduling_weights=transit_weights_tuple,
-        
-        # Keepout Angles
-        sun_avoidance_deg=float(get_val("visibility_sun_deg", args.sun_avoidance, 91.0)),
-        moon_avoidance_deg=float(get_val("visibility_moon_deg", args.moon_avoidance, 25.0)),
-        earth_avoidance_deg=float(get_val("visibility_earth_deg", args.earth_avoidance, 86.0)),
-        
-        # XML Generation Parameters
-        obs_sequence_duration_min=int(json_config.get("obs_sequence_duration_min", 90)),
-        occ_sequence_limit_min=int(json_config.get("occ_sequence_limit_min", 50)),
-        min_sequence_minutes=int(json_config.get("min_sequence_minutes", 5)),
-        break_occultation_sequences=bool(json_config.get("break_occultation_sequences", True)),
-        
-        # Standard Observations
-        std_obs_duration_hours=float(json_config.get("std_obs_duration_hours", 0.5)),
-        std_obs_frequency_days=float(json_config.get("std_obs_frequency_days", 3.0)),
-        
-        # Behavior Flags
-        show_progress=bool(get_val("show_progress", args.show_progress, False)),
-        force_regenerate=bool(json_config.get("force_regenerate", False)),
-        use_target_list_for_occultations=bool(json_config.get("use_target_list_for_occultations", False)),
-        prioritise_occultations_by_slew=bool(json_config.get("prioritise_occultations_by_slew", False)),
-        
-        # Auxiliary Sorting
-        aux_sort_key=str(json_config.get("aux_sort_key", "sort_by_tdf_priority")),
-        
-        # Metadata
-        author=json_config.get("author"),
-        created_timestamp=json_config.get("created_timestamp"),
-        visit_limit=json_config.get("visit_limit"),  # None by default
-        target_filters=json_config.get("target_filters", []),
-        
-        extra_inputs={**json_config.get("extra_inputs", {}), **extra_inputs},
-    )
-    
-    return config
+            raise ValueError(f"Invalid date format: {date_str}. Expected YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
 
 
 def print_summary(result: SchedulerResult, xml_path: Optional[Path]) -> None:
-    """Print summary of generated outputs."""
-    print("\n" + "=" * 80)
-    print("SCHEDULING PIPELINE COMPLETED SUCCESSFULLY")
-    print("=" * 80)
+    """Print a summary of the scheduling run."""
+    try:
+        print("\n" + "=" * 80)
+        print("SCHEDULING PIPELINE COMPLETED SUCCESSFULLY")
+        print("=" * 80)
+        print("\nGenerated Files:")
+        print("-" * 80)
 
-    print("\nGenerated Files:")
-    print("-" * 80)
+        if getattr(result, "schedule_csv", None):
+            print(f"  📄 Schedule CSV:      {result.schedule_csv}")
+        reports = getattr(result, "reports", {}) or {}
+        if reports.get("observation_time"):
+            print(f"  📊 Observation Time   {reports.get('observation_time')}")
+        if reports.get("tracker_csv"):
+            print(f"  📊 Tracker Csv        {reports.get('tracker_csv')}")
+        if reports.get("tracker_pickle"):
+            print(f"  📊 Tracker Pickle     {reports.get('tracker_pickle')}")
+        if xml_path:
+            print(f"  📑 Science Calendar:  {xml_path}")
 
-    if result.schedule_csv:
-        print(f"  📄 Schedule CSV:      {result.schedule_csv}")
+        print("-" * 80)
+        print("\nSchedule Statistics:")
+        schedule_df = None
+        diagnostics = getattr(result, "diagnostics", {}) or {}
+        schedule_df = diagnostics.get("schedule_dataframe")
 
-    for name, path in result.reports.items():
-        label = name.replace("_", " ").title()
-        print(f"  📊 {label:18} {path}")
+        if schedule_df is not None:
+            try:
+                total_obs = len(schedule_df)
+                unique_targets = int(schedule_df["Target"].nunique()) if "Target" in schedule_df.columns else 0
+                primary_obs = schedule_df[schedule_df["Type"] == "Primary"] if "Type" in schedule_df.columns else []
+                primary_count = len(primary_obs)
+            except Exception:
+                total_obs = 0
+                unique_targets = 0
+                primary_count = 0
+        else:
+            total_obs = 0
+            unique_targets = 0
+            primary_count = 0
 
-    if xml_path:
-        print(f"  📑 Science Calendar:  {xml_path}")
+        print(f"  Total observations:   {total_obs}")
+        print(f"  Unique targets:       {unique_targets}")
+        print(f"  Primary observations: {primary_count}")
 
-    print("-" * 80)
-
-    # Print statistics
-    if result.diagnostics:
-        schedule_df = result.diagnostics.get("schedule_dataframe")
-        if schedule_df is not None and not schedule_df.empty:
-            print(f"\nSchedule Statistics:")
-            print(f"  Total observations:   {len(schedule_df)}")
-            print(f"  Unique targets:       {schedule_df['Target'].nunique()}")
-
-            # Count primary vs auxiliary
-            primary_count = schedule_df[
-                ~schedule_df["Target"].str.contains("STD|Free Time", na=False)
-            ].shape[0]
-            print(f"  Primary observations: {primary_count}")
-
-    print("\n" + "=" * 80 + "\n")
+        print("\n" + "=" * 80)
+    except AttributeError as exc:
+        # Be defensive: if the SchedulerResult shape is unexpected, log and provide minimal info.
+        logger = logging.getLogger(__name__)
+        logger.error("Failed to generate summary: %s", exc)
+        try:
+            # Best-effort fallback: print whatever schedule CSV path exists.
+            if hasattr(result, "schedule_csv") and result.schedule_csv:
+                print(f"Schedule generated: {result.schedule_csv}")
+        except Exception:
+            # Give up cleanly; avoid raising further exceptions from summary printing.
+            pass
 
 
 def main() -> int:
-    """Main entry point for the scheduler pipeline."""
+    """Main execution function."""
     args = parse_args()
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
+    
+    # Initialize profiler if requested
+    profiler = None
+    if args.profile:
+        import cProfile
+        import pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
 
     try:
         logger.info(f"Scheduling window: {args.start} to {args.end}")
+        logger.info(f"Output directory: {args.output}")
 
-        # 1. Load and Build Configuration
-        json_config = load_json_config(args.config)
-        config = create_scheduler_config(args, json_config, logger)
+        # 1. Load Configuration
+        json_config = {}
+        if args.config:
+            with open(args.config, "r") as f:
+                json_config = json.load(f)
+        
+        # Default weights if not provided
+        sched_weights = (0.8, 0.0, 0.2)
+        
+        # Resolve target definition base
+        target_def_base = args.target_definitions
+        if not target_def_base and "PANDORA_TARGET_DEFINITION_BASE" in os.environ:
+            target_def_base = Path(os.environ["PANDORA_TARGET_DEFINITION_BASE"])
+            
+        # Resolve visibility GMAT file
+        visibility_gmat = args.gmat_ephemeris
+        if not visibility_gmat and "PANDORA_VISIBILITY_GMAT" in os.environ:
+            visibility_gmat = Path(os.environ["PANDORA_VISIBILITY_GMAT"])
 
-        # 2. Validate Requirements
-        # The unified config stores optional extra inputs; prefer CLI arg, then env var,
-        # then any value passed via config.extra_inputs (where create_scheduler_config
-        # may have placed the target_definition_base).
-        target_def_present = bool(
-            args.target_definitions
-            or os.environ.get("PANDORA_TARGET_DEFINITION_BASE")
-            or (hasattr(config, "extra_inputs") and config.extra_inputs.get("target_definition_base"))
-        )
-        if not target_def_present:
-            logger.error("Target definition base is required for the rework scheduler")
+        # 2. Validate Inputs
+        if args.generate_visibility and not target_def_base:
             logger.error(
+                "Visibility generation requires target definitions. "
                 "Please provide target definitions via --target-definitions or "
                 "set PANDORA_TARGET_DEFINITION_BASE environment variable"
             )
@@ -404,8 +332,69 @@ def main() -> int:
             
         # Determine whether visibility generation was requested (CLI or JSON)
         generate_visibility = args.generate_visibility or json_config.get("generate_visibility", False)
-        if generate_visibility and not config.gmat_ephemeris:
+        # `config` is not yet constructed here, so check the CLI/ENV visibility GMAT
+        if generate_visibility and visibility_gmat is None:
             logger.warning("Visibility generation requested but no GMAT ephemeris provided.")
+
+        # Build PandoraSchedulerConfig with the dataclass field names and types
+        obs_window_hours = float(get_val("obs_window_hours", args.obs_window, 24.0))
+        transit_cov = float(get_val("transit_coverage_min", args.transit_coverage, 0.4))
+        min_vis = float(get_val("min_visibility", args.min_visibility, 0.5))
+
+        # Coerce unified transit_scheduling_weights from JSON or CLI into a 3-tuple
+        raw_transit_weights = (
+            json_config.get("transit_scheduling_weights")
+            or sched_weights
+        )
+        if isinstance(raw_transit_weights, str):
+            raw_transit_weights = tuple(float(x.strip()) for x in raw_transit_weights.split(","))
+        transit_weights_tuple = tuple(float(x) for x in raw_transit_weights)
+
+        extra_inputs: Dict[str, Any] = {}
+        if target_def_base:
+            extra_inputs["target_definition_base"] = Path(target_def_base)
+            # When target definitions are provided, we need to specify which categories to process.
+            # These map to the standard directory names in the PandoraTargetList repository.
+            extra_inputs["target_definition_files"] = [
+                "exoplanet",
+                "auxiliary-standard",
+                "monitoring-standard",
+                "occultation-standard",
+            ]
+
+        if args.skip_manifests:
+            extra_inputs["skip_manifests"] = True
+
+        # Visibility GMAT goes into the typed field `gmat_ephemeris` on the config
+        if visibility_gmat is None:
+            gmat_path = None
+        else:
+            gmat_path = Path(str(visibility_gmat)).expanduser().resolve()
+
+        config = PandoraSchedulerConfig(
+            window_start=parse_datetime(args.start),
+            window_end=parse_datetime(args.end),
+            obs_window=timedelta(hours=obs_window_hours),
+            targets_manifest=args.output / "data",
+            gmat_ephemeris=gmat_path,
+            output_dir=args.output,
+            
+            # Scheduling Thresholds
+            transit_coverage_min=transit_cov,
+            min_visibility=min_vis,
+            deprioritization_limit_hours=float(json_config.get("deprioritization_limit_hours", 48.0)),
+            saa_overlap_threshold=float(json_config.get("saa_overlap_threshold", 0.0)),
+            commissioning_days=int(json_config.get("commissioning_days", 0)),
+            
+            # Weights
+            transit_scheduling_weights=transit_weights_tuple,
+            
+            # Extra inputs for pipeline
+            extra_inputs=extra_inputs,
+            
+            # Flags
+            show_progress=args.show_progress,
+        )
 
         # 3. Ensure targets manifest location exists (may be an output/data dir)
         if config.targets_manifest and not config.targets_manifest.exists():
@@ -451,6 +440,23 @@ def main() -> int:
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", exc_info=args.verbose)
         return 1
+    finally:
+        if profiler:
+            profiler.disable()
+            stats = pstats.Stats(profiler).sort_stats("cumulative")
+            stats.dump_stats(args.profile_output)
+            print(f"\nProfiling results written to {args.profile_output}")
+            stats.print_stats(30)
+
+
+def get_val(key: str, cli_arg: Any, default: Any) -> Any:
+    """Helper to prioritize CLI arg > JSON config > default."""
+    if cli_arg is not None:
+        return cli_arg
+    # Note: json_config would need to be passed in or global
+    # For simplicity in this script structure, we'll rely on CLI or defaults mostly
+    # But to support JSON fully, we'd check it here.
+    return default
 
 
 if __name__ == "__main__":

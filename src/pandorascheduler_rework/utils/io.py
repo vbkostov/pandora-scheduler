@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -12,23 +13,50 @@ import pandas as pd
 LOGGER = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=64)
+def _read_csv_with_mtime(file_path: str, mtime: Optional[float]) -> Optional[pd.DataFrame]:
+    """Internal reader cached by (file_path, mtime).
+
+    The wrapper `read_csv_cached` computes a file's mtime and passes
+    it here so the LRU cache key includes the mtime. That way, when a
+    file is overwritten (mtime changes), this cache entry is invalidated
+    and the new contents are read.
+    """
+    path = Path(file_path)
+    try:
+        return pd.read_csv(path)
+    except Exception as e:
+        LOGGER.error(f"Error reading {path}: {e}")
+        return None
+
+
+# cache on (file_path, mtime) -- mtime is a float or None (both hashable)
+_read_csv_with_mtime = lru_cache(maxsize=64)(_read_csv_with_mtime)
+
+
 def read_csv_cached(file_path: str) -> Optional[pd.DataFrame]:
-    """Read CSV file with LRU caching (max ~1.5 GB memory).
-    
-    Args:
-        file_path: String path to CSV file (must be string for caching)
-    
-    Returns:
-        DataFrame or None if file doesn't exist or error occurs
+    """Read CSV file with LRU caching that invalidates when file mtime changes.
+
+    This keeps the existing simple API (single `file_path` argument) but
+    ensures cached values reflect the current file contents when the file
+    is modified on disk.
     """
     path = Path(file_path)
     if not path.exists():
         return None
     try:
-        return pd.read_csv(path)
+        # Use os.stat to get mtime; wrap in try/except in case of network filesystems
+        mtime = None
+        try:
+            mtime = path.stat().st_mtime
+        except Exception:
+            # Fall back to os.path.getmtime if Path.stat() fails for any reason
+            try:
+                mtime = os.path.getmtime(str(path))
+            except Exception:
+                mtime = None
+        return _read_csv_with_mtime(str(path), mtime)
     except Exception as e:
-        LOGGER.error(f"Error reading {path}: {e}")
+        LOGGER.error(f"Error preparing to read {path}: {e}")
         return None
 
 

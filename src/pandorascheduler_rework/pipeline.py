@@ -119,14 +119,19 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
         )
 
         if target_definition_base is not None:
-            _generate_target_manifests(
-                target_definition_files,
-                target_definition_base,
-                primary_target_csv,
-                auxiliary_target_csv,
-                monitoring_target_csv,
-                occultation_target_csv,
-            )
+            # Allow callers to opt-out of regenerating manifests (use existing CSVs)
+            skip_manifests = _as_bool(extra_inputs.get("skip_manifests"), False)
+            if skip_manifests:
+                LOGGER.info("Skipping generation of target manifests (skip_manifests=True)")
+            else:
+                _generate_target_manifests(
+                    target_definition_files,
+                    target_definition_base,
+                    primary_target_csv,
+                    auxiliary_target_csv,
+                    monitoring_target_csv,
+                    occultation_target_csv,
+                )
     else:
         # Fallback if not explicitly provided (legacy behavior relied on implicit paths)
         # But for V2 we prefer explicit. If missing, we assume the CSVs exist.
