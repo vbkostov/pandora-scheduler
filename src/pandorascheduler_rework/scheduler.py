@@ -28,7 +28,7 @@ class SchedulerConfig:
 
     obs_window: timedelta
     transit_coverage_min: float
-    sched_weights: tuple[float, float, float]
+    transit_scheduling_weights: tuple[float, float, float]
     min_visibility: float
     deprioritization_limit_hours: float
     commissioning_days: int = 0
@@ -38,8 +38,8 @@ class SchedulerConfig:
     std_obs_frequency_days: float = 3.0
 
     def __post_init__(self) -> None:
-        if not np.isclose(sum(self.sched_weights), 1.0):
-            raise ValueError("Schedule weights must sum to 1.0")
+        if not np.isclose(sum(self.transit_scheduling_weights), 1.0):
+            raise ValueError("transit_scheduling_weights must sum to 1.0")
 
 
 @dataclass(frozen=True)
@@ -194,7 +194,7 @@ def run_scheduler(inputs: SchedulerInputs, config: SchedulerConfig) -> Scheduler
             sched_stop,
             obs_range,
             config.obs_window,
-            list(config.sched_weights),
+            list(config.transit_scheduling_weights),
             config.transit_coverage_min,
         )
 
@@ -418,8 +418,8 @@ def _persist_outputs(
     pandora_stop: datetime,
 ) -> tuple[Path, Path, Path]:
     schedule_name = (
-        f"Pandora_Schedule_{config.sched_weights[0]}_"
-        f"{config.sched_weights[1]}_{config.sched_weights[2]}_"
+        f"Pandora_Schedule_{config.transit_scheduling_weights[0]}_"
+        f"{config.transit_scheduling_weights[1]}_{config.transit_scheduling_weights[2]}_"
         f"{pandora_start.strftime('%Y-%m-%d')}_to_{pandora_stop.strftime('%Y-%m-%d')}.csv"
     )
     schedule_path = inputs.output_dir / schedule_name

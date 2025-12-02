@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule_v2
+from pandorascheduler_rework.pipeline import build_schedule
 from pandorascheduler_rework.science_calendar import (
     generate_science_calendar,
     ScienceCalendarInputs,
@@ -49,7 +49,7 @@ def main():
     # Show how to use it
     print()
     print("To actually run:")
-    print("  result = build_schedule_v2(config)")
+    print("  result = build_schedule(config)")
     print("  xml = generate_science_calendar(...)")
     
     print()

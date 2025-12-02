@@ -77,8 +77,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
     period_minutes = 30.0
     period_days = period_minutes / (24.0 * 60.0)
     epoch_time = Time(window_start - timedelta(minutes=150), scale="tdb", format="datetime")
-    # Ensure scalar numeric JD even if astropy returns a masked/array type
-    epoch_bjd_tdb = float(np.asarray(epoch_time.jd))
+    epoch_bjd_tdb = float(epoch_time.jd)
 
     target_df = pd.DataFrame(
         {
@@ -157,12 +156,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
         }
     )
 
-    # Compare columns and numeric values with tolerance rather than strict equality
-    assert list(star_visibility.columns) == list(expected_star.columns)
-    for col in expected_star.columns:
-        exp_vals = np.asarray(expected_star[col], dtype=float)
-        got_vals = np.asarray(star_visibility[col].to_numpy(), dtype=float)
-        assert np.allclose(got_vals, exp_vals, atol=1e-6, equal_nan=True)
+    pd.testing.assert_frame_equal(star_visibility, expected_star)
 
     assert not planet_visibility.empty
     np.testing.assert_array_equal(
@@ -176,9 +170,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
 
     star_time = Time(star_time_mjd, format="mjd", scale="utc")
     star_time_iso = Time(star_time.iso, format="iso", scale="utc")
-    # Normalize to python datetimes to avoid masked/np.datetime64 issues
-    raw_datetimes = star_time_iso.to_value("datetime")
-    star_datetimes = [pd.to_datetime(dt).to_pydatetime() for dt in np.asarray(raw_datetimes)]
+    star_datetimes = star_time_iso.to_value("datetime")
 
     visible_times = {
         dt for dt, flag in zip(star_datetimes, star_visible) if flag == 1.0

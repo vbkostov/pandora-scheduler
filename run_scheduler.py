@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Dict, Optional, Any
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule_v2, SchedulerResult
+from pandorascheduler_rework.pipeline import build_schedule, SchedulerResult
 from pandorascheduler_rework.science_calendar import (
     generate_science_calendar,
     ScienceCalendarInputs,
@@ -253,11 +253,14 @@ def create_scheduler_config(
     transit_cov = float(get_val("transit_coverage_min", args.transit_coverage, 0.4))
     min_vis = float(get_val("min_visibility", args.min_visibility, 0.5))
 
-    # Coerce sched_weights from JSON or CLI into a 3-tuple of floats
-    raw_sched_weights = json_config.get("sched_weights") or sched_weights
-    if isinstance(raw_sched_weights, str):
-        raw_sched_weights = tuple(float(x.strip()) for x in raw_sched_weights.split(","))
-    sched_weights_tuple = tuple(float(x) for x in raw_sched_weights)
+    # Coerce unified transit_scheduling_weights from JSON or CLI into a 3-tuple
+    raw_transit_weights = (
+        json_config.get("transit_scheduling_weights")
+        or sched_weights
+    )
+    if isinstance(raw_transit_weights, str):
+        raw_transit_weights = tuple(float(x.strip()) for x in raw_transit_weights.split(","))
+    transit_weights_tuple = tuple(float(x) for x in raw_transit_weights)
 
     extra_inputs: Dict[str, Path] = {}
     if target_def_base:
@@ -276,14 +279,47 @@ def create_scheduler_config(
         targets_manifest=args.output / "data",
         gmat_ephemeris=gmat_path,
         output_dir=args.output,
+        
+        # Scheduling Thresholds
         transit_coverage_min=transit_cov,
         min_visibility=min_vis,
-        sched_weights=sched_weights_tuple,
-        sun_avoidance_deg=get_val("visibility_sun_deg", args.sun_avoidance, 91.0),
-        moon_avoidance_deg=get_val("visibility_moon_deg", args.moon_avoidance, 25.0),
-        earth_avoidance_deg=get_val("visibility_earth_deg", args.earth_avoidance, 86.0),
+        deprioritization_limit_hours=float(json_config.get("deprioritization_limit_hours", 48.0)),
+        saa_overlap_threshold=float(json_config.get("saa_overlap_threshold", 0.0)),
+        commissioning_days=int(json_config.get("commissioning_days", 0)),
+        
+        # Weights
+        transit_scheduling_weights=transit_weights_tuple,
+        
+        # Keepout Angles
+        sun_avoidance_deg=float(get_val("visibility_sun_deg", args.sun_avoidance, 91.0)),
+        moon_avoidance_deg=float(get_val("visibility_moon_deg", args.moon_avoidance, 25.0)),
+        earth_avoidance_deg=float(get_val("visibility_earth_deg", args.earth_avoidance, 86.0)),
+        
+        # XML Generation Parameters
+        obs_sequence_duration_min=int(json_config.get("obs_sequence_duration_min", 90)),
+        occ_sequence_limit_min=int(json_config.get("occ_sequence_limit_min", 50)),
+        min_sequence_minutes=int(json_config.get("min_sequence_minutes", 5)),
+        break_occultation_sequences=bool(json_config.get("break_occultation_sequences", True)),
+        
+        # Standard Observations
+        std_obs_duration_hours=float(json_config.get("std_obs_duration_hours", 0.5)),
+        std_obs_frequency_days=float(json_config.get("std_obs_frequency_days", 3.0)),
+        
+        # Behavior Flags
         show_progress=bool(get_val("show_progress", args.show_progress, False)),
         force_regenerate=bool(json_config.get("force_regenerate", False)),
+        use_target_list_for_occultations=bool(json_config.get("use_target_list_for_occultations", False)),
+        prioritise_occultations_by_slew=bool(json_config.get("prioritise_occultations_by_slew", False)),
+        
+        # Auxiliary Sorting
+        aux_sort_key=str(json_config.get("aux_sort_key", "sort_by_tdf_priority")),
+        
+        # Metadata
+        author=json_config.get("author"),
+        created_timestamp=json_config.get("created_timestamp"),
+        visit_limit=json_config.get("visit_limit"),  # None by default
+        target_filters=json_config.get("target_filters", []),
+        
         extra_inputs={**json_config.get("extra_inputs", {}), **extra_inputs},
     )
     
@@ -373,7 +409,7 @@ def main() -> int:
 
         # 4. Run Scheduler (using new API)
         logger.info("Starting scheduler pipeline...")
-        result = build_schedule_v2(config)
+        result = build_schedule(config)
 
         # 4. Generate Science Calendar XML
         xml_path = None

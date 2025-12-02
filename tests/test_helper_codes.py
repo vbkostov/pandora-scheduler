@@ -11,6 +11,9 @@ import pytest
 from astropy.time import Time
 
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.utils.string_ops import remove_suffix
+from pandorascheduler_rework.utils.array_ops import remove_short_sequences, break_long_sequences
+from pandorascheduler_rework.xml import observation_sequence
 
 
 def _sample_target_row() -> pd.DataFrame:
@@ -45,7 +48,7 @@ def test_general_parameters_defaults():
 
 def test_remove_short_sequences_filters_runs():
     array = np.array([1, 1, 0, 1, 1, 1])
-    trimmed, spans = observation_utils.remove_short_sequences(array, 3)
+    trimmed, spans = remove_short_sequences(array, 3)
     assert np.array_equal(trimmed, np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]))
     assert spans == [(0, 1)]
 
@@ -53,7 +56,7 @@ def test_remove_short_sequences_filters_runs():
 def test_break_long_sequences_partitions_range():
     start = datetime(2025, 5, 1, 0, 0, 0)
     end = start + timedelta(minutes=5)
-    segments = observation_utils.break_long_sequences(start, end, timedelta(minutes=2))
+    segments = break_long_sequences(start, end, timedelta(minutes=2))
     assert segments == [
         (start, start + timedelta(minutes=2)),
         (start + timedelta(minutes=2), start + timedelta(minutes=4)),
@@ -62,8 +65,8 @@ def test_break_long_sequences_partitions_range():
 
 
 def test_remove_suffix_handles_planet_suffix():
-    assert observation_utils.remove_suffix("WASP-107 b") == "WASP-107"
-    assert observation_utils.remove_suffix("HD 1234") == "HD 1234"
+    assert remove_suffix("WASP-107 b") == "WASP-107"
+    assert remove_suffix("HD 1234") == "HD 1234"
 
 
 def test_observation_sequence_emits_expected_xml():
@@ -72,7 +75,7 @@ def test_observation_sequence_emits_expected_xml():
     stop = start + timedelta(minutes=90)
     targ_info = _sample_target_row()
 
-    sequence = observation_utils.observation_sequence(
+    sequence = observation_sequence(
         visit,
         "OBS-001",
         "WASP-107 b",

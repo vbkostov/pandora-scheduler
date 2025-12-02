@@ -30,12 +30,12 @@ class TestPandoraSchedulerConfig:
             gmat_ephemeris=Path("ephemeris.csv"),
             output_dir=Path("output"),
             transit_coverage_min=0.3,
-            sched_weights=(0.6, 0.2, 0.2),
+            transit_scheduling_weights=(0.6, 0.2, 0.2),
             show_progress=True,
         )
         
         assert config.transit_coverage_min == 0.3
-        assert config.sched_weights == (0.6, 0.2, 0.2)
+        assert config.transit_scheduling_weights == (0.6, 0.2, 0.2)
         assert config.show_progress is True
         
     def test_sched_weights_validation_pass(self):
@@ -43,35 +43,36 @@ class TestPandoraSchedulerConfig:
         config = PandoraSchedulerConfig(
             window_start=datetime(2026, 2, 5),
             window_end=datetime(2027, 2, 5),
-            sched_weights=(0.5, 0.3, 0.2),  # Sums to 1.0
+            transit_scheduling_weights=(0.5, 0.3, 0.2),  # Sums to 1.0
         )
-        assert sum(config.sched_weights) == pytest.approx(1.0)
+
+        assert sum(config.transit_scheduling_weights) == pytest.approx(1.0)
         
     def test_sched_weights_validation_fail(self):
         """Test that sched_weights not summing to 1.0 raises error."""
-        with pytest.raises(ValueError, match="sched_weights must sum to 1.0"):
+        with pytest.raises(ValueError, match="transit_scheduling_weights must sum to 1.0"):
             PandoraSchedulerConfig(
                 window_start=datetime(2026, 2, 5),
                 window_end=datetime(2027, 2, 5),
-                sched_weights=(0.5, 0.5, 0.5),  # Sums to 1.5!
+                transit_scheduling_weights=(0.5, 0.5, 0.5),  # Sums to 1.5!
             )
             
-    def test_calendar_weights_validation_pass(self):
-        """Test that calendar_weights summing to 1.0 validates."""
+    def test_transit_scheduling_weights_validation_pass(self):
+        """Test that transit_scheduling_weights summing to 1.0 validates."""
         config = PandoraSchedulerConfig(
             window_start=datetime(2026, 2, 5),
             window_end=datetime(2027, 2, 5),
-            calendar_weights=(0.7, 0.1, 0.2),  # Sums to 1.0
+            transit_scheduling_weights=(0.7, 0.1, 0.2),  # Sums to 1.0
         )
-        assert sum(config.calendar_weights) == pytest.approx(1.0)
+        assert sum(config.transit_scheduling_weights) == pytest.approx(1.0)
         
-    def test_calendar_weights_validation_fail(self):
-        """Test that calendar_weights not summing to 1.0 raises error."""
-        with pytest.raises(ValueError, match="calendar_weights must sum to 1.0"):
+    def test_transit_scheduling_weights_validation_fail(self):
+        """Test that transit_scheduling_weights not summing to 1.0 raises error."""
+        with pytest.raises(ValueError, match="transit_scheduling_weights must sum to 1.0"):
             PandoraSchedulerConfig(
                 window_start=datetime(2026, 2, 5),
                 window_end=datetime(2027, 2, 5),
-                calendar_weights=(1.0, 0.5, 0.5),  # Sums to 2.0!
+                transit_scheduling_weights=(1.0, 0.5, 0.5),  # Sums to 2.0!
             )
             
     def test_transit_coverage_min_validation_pass(self):
@@ -108,7 +109,7 @@ class TestPandoraSchedulerConfig:
             window_end=datetime(2027, 2, 5),
             obs_window=timedelta(hours=48),
             transit_coverage_min=0.25,
-            sched_weights=(0.6, 0.2, 0.2),
+            transit_scheduling_weights=(0.6, 0.2, 0.2),
             min_visibility=0.1,
             deprioritization_limit_hours=36.0,
         )
@@ -117,7 +118,7 @@ class TestPandoraSchedulerConfig:
         
         assert scheduler_config.obs_window == timedelta(hours=48)
         assert scheduler_config.transit_coverage_min == 0.25
-        assert scheduler_config.sched_weights == (0.6, 0.2, 0.2)
+        assert scheduler_config.transit_scheduling_weights == (0.6, 0.2, 0.2)
         assert scheduler_config.min_visibility == 0.1
         assert scheduler_config.deprioritization_limit_hours == 36.0
         
@@ -129,7 +130,7 @@ class TestPandoraSchedulerConfig:
             visit_limit=100,
             obs_sequence_duration_min=120,
             min_sequence_minutes=10,
-            calendar_weights=(0.9, 0.0, 0.1),
+            transit_scheduling_weights=(0.9, 0.0, 0.1),
             sun_avoidance_deg=95.0,
             moon_avoidance_deg=30.0,
             earth_avoidance_deg=90.0,
@@ -199,8 +200,7 @@ class TestPandoraSchedulerConfig:
         
         # Defaults should be the same as in the classes they replace
         assert config.transit_coverage_min == 0.2
-        assert config.sched_weights == (0.5, 0.3, 0.2)
-        assert config.calendar_weights == (0.8, 0.0, 0.2)
+        assert config.transit_scheduling_weights == (0.8, 0.0, 0.2)
         assert config.sun_avoidance_deg == 91.0
         assert config.moon_avoidance_deg == 25.0
         assert config.earth_avoidance_deg == 86.0

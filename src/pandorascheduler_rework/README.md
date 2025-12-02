@@ -9,7 +9,7 @@ The main package containing all source code.
 
 *   **`scheduler.py`**: **CORE LOGIC**. Contains the main scheduling loop (`run_scheduler`). Decides *what* to observe and *when*.
 *   **`science_calendar.py`**: **OUTPUT GENERATOR**. Converts the schedule into the XML format required by the spacecraft.
-*   **`pipeline.py`**: **ENTRY POINT**. Orchestrates the entire process (Data Load -> Visibility -> Schedule -> Output). Contains `build_schedule` and `build_schedule_v2`.
+*   **`pipeline.py`**: **ENTRY POINT**. Orchestrates the entire process (Data Load -> Visibility -> Schedule -> Output). Contains `build_schedule`.
 *   **`config.py`**: **CONFIGURATION**. The new unified configuration system (`PandoraSchedulerConfig`).
 *   **`observation_utils.py`**: **HELPERS**. Domain-specific helpers for observation sequences and coordinates.
 
@@ -35,7 +35,7 @@ The main package containing all source code.
 
 | Goal | Function | File |
 |------|----------|------|
-| **Run the Scheduler** | `build_schedule_v2(config)` | `pipeline.py` |
+| **Run the Scheduler** | `build_schedule(config)` | `pipeline.py` |
 | **Configure a Run** | `PandoraSchedulerConfig(...)` | `config.py` |
 | **Scheduling Logic** | `run_scheduler(...)` | `scheduler.py` |
 | **Generate XML** | `generate_science_calendar(...)` | `science_calendar.py` |
@@ -53,12 +53,12 @@ Using `PandoraSchedulerConfig` in `config.py`.
 
 ```python
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule_v2
+from pandorascheduler_rework.pipeline import build_schedule
 
 config = PandoraSchedulerConfig(
     window_start=...,
     window_end=...,
     targets_manifest=...
 )
-result = build_schedule_v2(config)
+result = build_schedule(config)
 ```

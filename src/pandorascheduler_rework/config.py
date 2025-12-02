@@ -71,11 +71,13 @@ class PandoraSchedulerConfig:
     # WEIGHTING FACTORS (must sum to 1.0)
     # ============================================================================
     
-    sched_weights: Tuple[float, float, float] = (0.5, 0.3, 0.2)
-    """Scheduling weights: (transit_coverage, saa_overlap, schedule_factor)."""
-    
-    calendar_weights: Tuple[float, float, float] = (0.8, 0.0, 0.2)
-    """Calendar generation weights: (coverage, saa, schedule)."""
+    transit_scheduling_weights: Tuple[float, float, float] = (0.8, 0.0, 0.2)
+    """Unified transit scheduling weights: (coverage, saa, schedule).
+
+    This single triple is used both by the scheduling algorithm and is recorded
+    into the science calendar metadata. It replaces the previous separate
+    `sched_weights` and `calendar_weights` fields.
+    """
     
     # ============================================================================
     # KEEPOUT ANGLES (degrees)
@@ -164,16 +166,10 @@ class PandoraSchedulerConfig:
     
     def __post_init__(self) -> None:
         """Validate configuration consistency."""
-        # Validate sched_weights sum to 1.0
-        if not np.isclose(sum(self.sched_weights), 1.0):
+        # Validate transit_scheduling_weights sum to 1.0
+        if not np.isclose(sum(self.transit_scheduling_weights), 1.0):
             raise ValueError(
-                f"sched_weights must sum to 1.0, got {sum(self.sched_weights)}"
-            )
-        
-        # Validate calendar_weights sum to 1.0
-        if not np.isclose(sum(self.calendar_weights), 1.0):
-            raise ValueError(
-                f"calendar_weights must sum to 1.0, got {sum(self.calendar_weights)}"
+                f"transit_scheduling_weights must sum to 1.0, got {sum(self.transit_scheduling_weights)}"
             )
         
         # Validate transit_coverage_min in range
@@ -193,7 +189,7 @@ class PandoraSchedulerConfig:
         return SchedulerConfig(
             obs_window=self.obs_window,
             transit_coverage_min=self.transit_coverage_min,
-            sched_weights=self.sched_weights,
+            transit_scheduling_weights=self.transit_scheduling_weights,
             min_visibility=self.min_visibility,
             deprioritization_limit_hours=self.deprioritization_limit_hours,
             commissioning_days=self.commissioning_days,
@@ -215,7 +211,7 @@ class PandoraSchedulerConfig:
             break_occultation_sequences=self.break_occultation_sequences,
             use_target_list_for_occultations=self.use_target_list_for_occultations,
             prioritise_occultations_by_slew=self.prioritise_occultations_by_slew,
-            calendar_weights=self.calendar_weights,
+            calendar_weights=self.transit_scheduling_weights,
             keepout_angles=(
                 self.sun_avoidance_deg,
                 self.moon_avoidance_deg,
