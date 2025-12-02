@@ -29,7 +29,7 @@ PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(PACKAGEDIR, "data")
 
 schedule_path = os.path.join(
-    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-05-05.csv"
+    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05.csv"
 )
 tar_vis_path = os.path.join(DATA_DIR, "targets")
 aux_vis_path = os.path.join(DATA_DIR, "aux_targets")
@@ -107,7 +107,7 @@ meta=ET.SubElement(cal, 'Meta',
 #
 #
 #
-for i in tqdm(range(43,44)):#len(sch))):
+for i in tqdm(range(129,130)):#len(sch))):
 
     t_name = sch['Target'][i]
 
@@ -197,8 +197,8 @@ for i in tqdm(range(43,44)):#len(sch))):
         if int(n) < n:
             sps.append(sp)
 
-        if sps[-1] == v_time[-1]:
-            sps[-1] = v_time[-2]
+        # if sps[-1] == v_time[-1]:
+        #     sps[-1] = v_time[-2]
 
         sps_all = [st, *sps]
         for s in range(len(sps_all) - 1):
