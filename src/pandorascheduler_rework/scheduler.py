@@ -379,12 +379,22 @@ def _initialize_tracker(
             transits_left_schedule.append(0)
             continue
 
-        start_transits = Time(
-            planet_data["Transit_Start"], format="mjd", scale="utc"
-        ).to_value("datetime")
-        end_transits = Time(
-            planet_data["Transit_Stop"], format="mjd", scale="utc"
-        ).to_value("datetime")
+        # Use pre-converted datetime if available (performance optimization)
+        if "Transit_Start_UTC" in planet_data.columns:
+            start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"]).to_numpy()
+        else:
+            # Fallback to MJD conversion for backward compatibility
+            start_transits = Time(
+                planet_data["Transit_Start"], format="mjd", scale="utc"
+            ).to_value("datetime")
+        
+        if "Transit_Stop_UTC" in planet_data.columns:
+            end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"]).to_numpy()
+        else:
+            # Fallback to MJD conversion for backward compatibility
+            end_transits = Time(
+                planet_data["Transit_Stop"], format="mjd", scale="utc"
+            ).to_value("datetime")
 
         lifetime_mask = (pandora_start <= start_transits) & (
             end_transits <= pandora_stop
@@ -699,10 +709,16 @@ def _schedule_auxiliary_target(
             if vis is None or vis.empty or len(vis) == 0:
                 continue
 
-            vis_times = Time(
-                vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
-            ).to_datetime()
-            vis_times = pd.to_datetime(vis_times)
+            # Use pre-converted datetime if available (performance optimization)
+            if "Time_UTC" in vis.columns:
+                vis_times = pd.to_datetime(vis["Time_UTC"])
+            else:
+                # Fallback to MJD conversion for backward compatibility
+                vis_times = Time(
+                    vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
+                ).to_datetime()
+                vis_times = pd.to_datetime(vis_times)
+            
             mask = (vis_times >= active_start) & (
                 vis_times <= active_start + obs_std_duration
             )
@@ -816,10 +832,16 @@ def _schedule_auxiliary_target(
             if vis is None or vis.empty or len(vis) == 0:
                 continue
 
-            vis_times = Time(
-                vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
-            ).to_datetime()
-            vis_times = pd.to_datetime(vis_times)
+            # Use pre-converted datetime if available (performance optimization)
+            if "Time_UTC" in vis.columns:
+                vis_times = pd.to_datetime(vis["Time_UTC"])
+            else:
+                # Fallback to MJD conversion for backward compatibility
+                vis_times = Time(
+                    vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
+                ).to_datetime()
+                vis_times = pd.to_datetime(vis_times)
+            
             mask = (vis_times >= active_start) & (vis_times <= stop)
             vis_filtered = vis.loc[mask]
 

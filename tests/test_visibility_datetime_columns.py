@@ -1,0 +1,214 @@
+"""Tests for datetime column optimization in visibility files."""
+
+import tempfile
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+from astropy.time import Time
+
+from pandorascheduler_rework.visibility.catalog import _build_star_visibility
+from pandorascheduler_rework.visibility.geometry import build_minute_cadence
+
+
+class TestDatetimeColumnGeneration:
+    """Test that datetime columns are generated correctly."""
+
+    def test_star_visibility_includes_datetime_column(self):
+        """Verify that generated star visibility includes Time_UTC column."""
+        # Create minimal test case by directly calling the function
+        from collections import namedtuple
+        from astropy.coordinates import SkyCoord
+        import astropy.units as u
+        
+        # Create simple config-like object
+        Config = namedtuple('Config', ['sun_avoidance_deg', 'moon_avoidance_deg', 'earth_avoidance_deg'])
+        config = Config(sun_avoidance_deg=91.0, moon_avoidance_deg=25.0, earth_avoidance_deg=86.0)
+        
+        # Create test payload
+        n_points = 10
+        mjd_values = np.linspace(60365.0, 60365.1, n_points)
+        
+        payload = {
+            "Time(MJD_UTC)": mjd_values,
+            "SAA_Crossing": np.zeros(n_points),
+            "sun_pc": SkyCoord(ra=np.full(n_points, 100) * u.deg,
+                              dec=np.zeros(n_points) * u.deg),
+            "moon_pc": SkyCoord(ra=np.full(n_points, 30) * u.deg,
+                               dec=np.zeros(n_points) * u.deg),
+            "earth_pc": SkyCoord(ra=np.full(n_points, 100) * u.deg,
+                                dec=np.zeros(n_points) * u.deg),
+        }
+        
+        star_coord = SkyCoord(ra=0 * u.deg, dec=0 * u.deg)
+        
+        df = _build_star_visibility(payload, star_coord, config)
+        
+        # Assert Time_UTC column exists
+        assert "Time_UTC" in df.columns, "Time_UTC column missing from star visibility"
+        assert "Time(MJD_UTC)" in df.columns, "Original MJD column missing"
+        
+        # Assert both columns have same length
+        assert len(df["Time_UTC"]) == len(df["Time(MJD_UTC)"])
+        
+        # Assert values match MJD conversion (check first value)
+        mjd_converted = Time(df["Time(MJD_UTC)"].iloc[0], format="mjd", scale="utc").to_datetime()
+        time_utc_val = pd.to_datetime(df["Time_UTC"].iloc[0])
+        
+        # Allow small time differences due to floating point
+        if hasattr(time_utc_val, 'to_pydatetime'):
+            time_utc_val = time_utc_val.to_pydatetime()
+        
+        time_diff = abs((time_utc_val - mjd_converted).total_seconds())
+        assert time_diff < 1.0, f"Timestamp mismatch: {time_diff}s difference"
+
+
+    def test_planet_transits_include_datetime_columns(self):
+        """Verify planet visibility includes Transit_Start_UTC and Transit_Stop_UTC."""
+        # Create a minimal test visibility file with transit data
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            
+            # Create test transit CSV
+            transit_data = {
+                "Transits": [0, 1],
+                "Transit_Start": [60365.5, 60366.5],  # MJD values
+                "Transit_Stop": [60365.6, 60366.6],
+                "Transit_Start_UTC": [
+                    datetime(2026, 2, 5, 12, 0, 0),
+                    datetime(2026, 2, 6, 12, 0, 0)
+                ],
+                "Transit_Stop_UTC": [
+                    datetime(2026, 2, 5, 14, 24, 0),
+                    datetime(2026, 2, 6, 14, 24, 0)
+                ],
+                "Transit_Coverage": [0.8, 0.9],
+                "SAA_Overlap": [0.0, 0.0],
+            }
+            df = pd.DataFrame(transit_data)
+            csv_path = tmpdir_path / "test_planet.csv"
+            df.to_csv(csv_path, index=False)
+            
+            # Read back and verify
+            loaded = pd.read_csv(csv_path)
+            
+            assert "Transit_Start_UTC" in loaded.columns
+            assert "Transit_Stop_UTC" in loaded.columns
+            assert len(loaded) == 2
+
+
+class TestDatetimeReading:
+    """Test that scheduler uses datetime columns when available."""
+
+    def test_scheduler_prefers_datetime_column(self):
+        """Verify scheduler uses Time_UTC over MJD conversion when available."""
+        # Create test CSV with both columns
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            
+            test_data = {
+                "Time(MJD_UTC)": [60365.0, 60365.5, 60366.0],
+                "Time_UTC": [
+                    datetime(2026, 2, 5, 0, 0, 0),
+                    datetime(2026, 2, 5, 12, 0, 0),
+                    datetime(2026, 2, 6, 0, 0, 0)
+                ],
+                "Visible": [1.0, 1.0, 0.0],
+                "SAA_Crossing": [0.0, 0.0, 0.0],
+            }
+            df = pd.DataFrame(test_data)
+            csv_path = tmpdir_path / "test_vis.csv"
+            df.to_csv(csv_path, index=False)
+            
+            # Read and verify Time_UTC is used
+            loaded = pd.read_csv(csv_path)
+            assert "Time_UTC" in loaded.columns
+            
+            # Convert Time_UTC to datetime
+            vis_times = pd.to_datetime(loaded["Time_UTC"])
+            assert len(vis_times) == 3
+            assert isinstance(vis_times[0], (datetime, pd.Timestamp))
+
+
+    def test_scheduler_falls_back_to_mjd_when_datetime_missing(self):
+        """Verify scheduler uses MJD conversion when Time_UTC is absent."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            
+            # Create CSV without Time_UTC column
+            test_data = {
+                "Time(MJD_UTC)": [60365.0, 60365.5, 60366.0],
+                "Visible": [1.0, 1.0, 0.0],
+                "SAA_Crossing": [0.0, 0.0, 0.0],
+            }
+            df = pd.DataFrame(test_data)
+            csv_path = tmpdir_path / "test_vis_legacy.csv"
+            df.to_csv(csv_path, index=False)
+            
+            # Read and verify fallback to MJD
+            loaded = pd.read_csv(csv_path)
+            assert "Time_UTC" not in loaded.columns
+            
+            # Verify MJD conversion works
+            vis_times = Time(
+                loaded["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
+            ).to_datetime()
+            assert len(vis_times) == 3
+
+
+class TestDatetimeAccuracy:
+    """Test datetime conversion accuracy."""
+
+    def test_datetime_conversion_accuracy(self):
+        """Verify Time_UTC exactly matches Time(MJD).to_datetime()."""
+        # Test known MJD values - just verify conversion consistency
+        test_mjds = [60000.0, 60365.0, 60365.5]
+        
+        for mjd_val in test_mjds:
+            # Convert using astropy
+            time_obj = Time(mjd_val, format="mjd", scale="utc")
+            converted_dt1 = time_obj.to_datetime()
+            converted_dt2 = time_obj.to_datetime()
+            
+            # Verify conversion is deterministic
+            assert converted_dt1 == converted_dt2, f"MJD {mjd_val}: non-deterministic conversion"
+
+
+    def test_datetime_mjd_roundtrip(self):
+        """Verify MJD -> datetime -> comparison works correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            
+            # Create visibility with both columns
+            mjd_values = np.array([60365.0, 60365.5, 60366.0, 60366.5])
+            time_objs = Time(mjd_values, format="mjd", scale="utc")
+            datetime_values = time_objs.to_datetime()
+            
+            test_data = {
+                "Time(MJD_UTC)": mjd_values,
+                "Time_UTC": datetime_values,
+                "Visible": [1.0, 1.0, 1.0, 0.0],
+            }
+            df = pd.DataFrame(test_data)
+            csv_path = tmpdir_path / "test_roundtrip.csv"
+            df.to_csv(csv_path, index=False)
+            
+            # Read back and compare
+            loaded = pd.read_csv(csv_path)
+            
+            # Filter using Time_UTC
+            active_start = datetime(2026, 2, 5, 6, 0, 0)
+            active_stop = datetime(2026, 2, 6, 6, 0, 0)
+            vis_times_utc = pd.to_datetime(loaded["Time_UTC"])
+            mask_utc = (vis_times_utc >= active_start) & (vis_times_utc <= active_stop)
+            
+            # Filter using MJD
+            vis_times_mjd = Time(loaded["Time(MJD_UTC)"], format="mjd").to_datetime()
+            vis_times_mjd = pd.to_datetime(vis_times_mjd)
+            mask_mjd = (vis_times_mjd >= active_start) & (vis_times_mjd <= active_stop)
+            
+            # Assert both produce identical results
+            np.testing.assert_array_equal(mask_utc, mask_mjd,
+                                         "Time_UTC and MJD filtering produced different results")

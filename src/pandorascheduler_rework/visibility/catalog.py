@@ -157,8 +157,14 @@ def _build_star_visibility(
 
     visible = (sun_req & moon_req & earth_req).astype(float)
 
+    # Pre-convert MJD to datetime for scheduler performance
+    from astropy.time import Time
+    time_utc = Time(payload["Time(MJD_UTC)"], format="mjd", scale="utc")
+    datetime_utc = time_utc.to_datetime()
+
     data = {
         "Time(MJD_UTC)": payload["Time(MJD_UTC)"],
+        "Time_UTC": datetime_utc,
         "SAA_Crossing": payload["SAA_Crossing"],
         "Visible": np.round(visible, 1),
         "Earth_Sep": np.round(earth_sep, 3),
@@ -418,6 +424,8 @@ def _compute_planet_transits(
             "Transits": np.arange(len(start_datetimes), dtype=int),
             "Transit_Start": start_transits.value,
             "Transit_Stop": end_transits.value,
+            "Transit_Start_UTC": start_datetimes,
+            "Transit_Stop_UTC": end_datetimes,
             "Transit_Coverage": coverage,
             "SAA_Overlap": saa_overlap,
         }

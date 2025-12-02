@@ -118,6 +118,12 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
     assert star_output.exists()
     assert planet_output.exists()
 
+    # Verify star visibility CSV was created with correct structure
+    star_df = pd.read_csv(star_output)
+    assert not star_df.empty
+    expected_cols = {"Time(MJD_UTC)", "Time_UTC", "SAA_Crossing", "Visible", "Earth_Sep", "Moon_Sep", "Sun_Sep"}
+    assert set(star_df.columns) == expected_cols
+
     star_visibility = pd.read_csv(star_output)
     planet_visibility = pd.read_csv(planet_output)
 
@@ -148,6 +154,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
     expected_star = pd.DataFrame(
         {
             "Time(MJD_UTC)": np.round(cadence.mjd_utc, 6),
+            "Time_UTC": Time(cadence.mjd_utc, format="mjd", scale="utc").to_datetime(),
             "SAA_Crossing": saa_crossing,
             "Visible": visible,
             "Earth_Sep": earth_sep,
@@ -156,7 +163,10 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
         }
     )
 
-    pd.testing.assert_frame_equal(star_visibility, expected_star)
+    # Drop Time_UTC for comparison since datetime conversion may have microsecond differences
+    star_visibility_compare = star_visibility.drop(columns=["Time_UTC"])
+    expected_star_compare = expected_star.drop(columns=["Time_UTC"])
+    pd.testing.assert_frame_equal(star_visibility_compare, expected_star_compare)
 
     assert not planet_visibility.empty
     np.testing.assert_array_equal(
