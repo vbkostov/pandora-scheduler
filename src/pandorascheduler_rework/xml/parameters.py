@@ -10,7 +10,6 @@ import pandas as pd
 
 from pandorascheduler_rework.utils.string_ops import target_identifier
 
-
 _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 
 

@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, MutableMapping, Tuple
 
+import astropy.units as u
 import pandas as pd
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
-import astropy.units as u
 from erfa import ErfaWarning
 
 warnings.filterwarnings("ignore", category=ErfaWarning)

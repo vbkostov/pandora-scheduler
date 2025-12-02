@@ -18,7 +18,6 @@ from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.utils.string_ops import remove_suffix
 
-
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 

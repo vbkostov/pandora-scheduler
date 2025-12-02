@@ -15,13 +15,13 @@ and improved documentation.
 from __future__ import annotations
 
 import logging
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
 from numbers import Number
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
-import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
 import numpy as np
@@ -31,11 +31,13 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.utils import time as time_utils
-from pandorascheduler_rework.utils.array_ops import remove_short_sequences, break_long_sequences
+from pandorascheduler_rework.utils.array_ops import (
+    break_long_sequences,
+    remove_short_sequences,
+)
+from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.xml import observation_sequence
-
 
 LOGGER = logging.getLogger(__name__)
 

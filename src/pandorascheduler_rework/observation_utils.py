@@ -14,13 +14,12 @@ scheduling pipeline.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import functools
+import logging
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, cast
-
-import logging
 
 import numpy as np
 import pandas as pd
@@ -29,11 +28,10 @@ from tqdm import tqdm
 
 from pandorascheduler_rework.targets.manifest import build_target_manifest
 from pandorascheduler_rework.utils.io import (
-    build_visibility_path,
     build_star_visibility_path,
+    build_visibility_path,
     read_csv_cached,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 

@@ -11,7 +11,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import pandas as pd
 
 from pandorascheduler_rework import observation_utils as rework_helper
-from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
     SchedulerConfig,
@@ -19,9 +18,9 @@ from pandorascheduler_rework.scheduler import (
     SchedulerPaths,
     run_scheduler,
 )
+from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
 from pandorascheduler_rework.visibility.config import VisibilityConfig
-
 
 LOGGER = logging.getLogger(__name__)
 

@@ -6,7 +6,6 @@ import re
 
 import pandas as pd
 
-
 # Pre-compile regex pattern for performance
 _PLANET_SUFFIX_PATTERN = re.compile(r"\s+[a-z]$", flags=re.ASCII)
 
