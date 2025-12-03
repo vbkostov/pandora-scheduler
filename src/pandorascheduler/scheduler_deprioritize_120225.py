@@ -32,7 +32,7 @@ def Schedule(
     transit_coverage_min: float,
     sched_wts: list,
     min_visibility: float,
-    deprioritization_limit: float, 
+    # deprioritization_limit: float, 
     aux_key: str,
     aux_list:str,
     fname_tracker: str,
@@ -395,8 +395,7 @@ def Schedule(
         ### Schedule auxiliary observation if possible
         if len(temp_df) == 0:
             aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, stop, aux_key, \
-                non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, \
-                    deprioritization_limit = deprioritization_limit, last_std_obs = last_std_obs)
+                non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
 
             if sched_df.empty:
                 sched_df = aux_df.copy()
@@ -456,8 +455,7 @@ def Schedule(
 
             if obs_rng[0] < obs_start: # primary target not visible for some time at the start of the visit --> find auxiliary target for that time
                 aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, obs_start, aux_key, \
-                    non_primary_obs_time=non_primary_obs_time, \
-                        min_visibility = min_visibility, deprioritization_limit = deprioritization_limit, last_std_obs = last_std_obs)
+                    non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
                 
                 if sched_df.empty:
                     sched_df = aux_df.copy()
@@ -571,7 +569,7 @@ def Schedule(
 
     return tracker
 
-def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, deprioritization_limit, last_std_obs, **kwargs):
+def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, last_std_obs, **kwargs):
 
     obs_rng = pd.date_range(start, stop, freq = "min")
 
@@ -777,6 +775,10 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
 
         total_time = np.sum(non_primary_obs_time[name][0]) if isinstance(non_primary_obs_time[name][0], np.ndarray) else non_primary_obs_time[name][0]
 
+        priority_fn_tmp = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/auxiliary-standard/auxiliary-standard_priorities.csv'
+        metadata_tmp, data_tmp = helper_codes.read_priority_csv(priority_fn_tmp)
+        deprioritization_limit = data_tmp[data_tmp['target'] == name]['hours_req'].iloc[0]
+
         if total_time > timedelta(hours=deprioritization_limit):
             print(f"----------------------------> Deprioritize {name} <----------------------------")
             logger.warning("Deprioritizing %s due to accumulated auxiliary time", name)
@@ -922,7 +924,7 @@ def Schedule_all_scratch(
     
     
     #Schedule observations for the scheduling period
-    tracker = Schedule(pandora_start, pandora_stop, primary_targ_list, obs_window, transit_coverage_min, sched_wts, min_visibility, deprioritization_limit, \
+    tracker = Schedule(pandora_start, pandora_stop, primary_targ_list, obs_window, transit_coverage_min, sched_wts, min_visibility, \
         aux_key = aux_key, aux_list=aux_targ_list, fname_tracker = fname_tracker, commissioning_time = commissioning_time_, \
             sched_start = sched_start, sched_stop = sched_stop, output_dir=output_dir)
     
@@ -931,9 +933,9 @@ if __name__ == "__main__":
 
     obs_window = timedelta(hours=24.0)
     pandora_start = "2026-02-05 00:00:00"
-    pandora_stop = "2027-02-05 00:00:00"
+    pandora_stop = "2026-04-05 00:00:00"
     sched_start= "2026-02-05 00:00:00"
-    sched_stop= "2027-02-05 00:00:00"
+    sched_stop= "2026-04-05 00:00:00"
 
     commissioning_time_ = 0  # days
 
@@ -977,7 +979,7 @@ if __name__ == "__main__":
     run_ = 'vis_and_schedule'
 
     if run_ == 'schedule_only':
-        Schedule(pandora_start, pandora_stop, primary_targ_list, obs_window, transit_coverage_min, sched_wts, min_visibility, deprioritization_limit, \
+        Schedule(pandora_start, pandora_stop, primary_targ_list, obs_window, transit_coverage_min, sched_wts, min_visibility, \
             aux_key = aux_key, aux_list=aux_targ_list, fname_tracker = fname_tracker, commissioning_time = commissioning_time_, \
                 sched_start = sched_start, sched_stop = sched_stop, output_dir=output_dir)
     elif run_ == 'target_visibility':
