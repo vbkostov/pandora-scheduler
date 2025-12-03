@@ -90,6 +90,13 @@ class TestConfigParameterPropagation:
         pd.DataFrame([{"Star Name": "Test", "RA": 0, "DEC": 0}]).to_csv(
             data_dir / "exoplanet_targets.csv", index=False
         )
+        # Create auxiliary catalogs expected by the calendar builder
+        pd.DataFrame([{"Star Name": "Test", "RA": 0, "DEC": 0}]).to_csv(
+            data_dir / "aux_list_new.csv", index=False
+        )
+        pd.DataFrame([{"Star Name": "Test", "RA": 0, "DEC": 0}]).to_csv(
+            data_dir / "occultation-standard_targets.csv", index=False
+        )
         
         # Create visibility file
         vis_dir = data_dir / "targets" / "Test"
@@ -104,15 +111,15 @@ class TestConfigParameterPropagation:
             data_dir=data_dir,
         )
         
-        # Generate calendar (may fail but we're checking parameter usage)
+        # Generate calendar; surface any unexpected failures so the test fails
         try:
             output = generate_science_calendar(
                 inputs=inputs,
                 config=config,
                 output_path=tmp_path / "calendar.xml",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            pytest.fail(f"generate_science_calendar raised an unexpected exception: {e}")
         
         # Verify config has the right parameters
         assert config.visit_limit == 50
