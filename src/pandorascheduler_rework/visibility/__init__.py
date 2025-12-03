@@ -8,9 +8,3 @@ latest roadmap.
 
 from .catalog import build_visibility_catalog  # noqa: F401
 from .config import VisibilityConfig  # noqa: F401
-from .diff import (
-	ComparisonSummary,
-	FileComparison,
-	compare_and_print,
-	compare_visibility_trees,
-)  # noqa: F401

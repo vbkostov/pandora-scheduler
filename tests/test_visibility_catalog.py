@@ -10,10 +10,8 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-from pandorascheduler_rework.visibility import diff as diff_module
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
 from pandorascheduler_rework.visibility.config import VisibilityConfig
-from pandorascheduler_rework.visibility.diff import ComparisonSummary, compare_visibility_trees
 from pandorascheduler_rework.visibility.geometry import (
     build_minute_cadence,
     compute_saa_crossings,
@@ -273,105 +271,4 @@ def _write_csv(path: Path, content: str) -> None:
     path.write_text(content)
 
 
-def test_compare_visibility_trees_detects_mismatches(tmp_path):
-    legacy_root = tmp_path / "legacy"
-    rework_root = tmp_path / "rework"
 
-    legacy_star = legacy_root / "Star" / "Visibility for Star.csv"
-    rework_star = rework_root / "Star" / "Visibility for Star.csv"
-
-    legacy_planet = legacy_root / "Star" / "Planet" / "Visibility for Planet.csv"
-    rework_planet = rework_root / "Star" / "Planet" / "Visibility for Planet.csv"
-
-    _write_csv(
-        legacy_star,
-        "Time(MJD_UTC),SAA_Crossing,Visible,Earth_Sep\n"
-        "1,0,1,90\n"
-        "2,1,0,91\n",
-    )
-    _write_csv(
-        rework_star,
-        "Time(MJD_UTC),SAA_Crossing,Visible,Earth_Sep\n"
-        "1,0,1,90.001\n"
-        "2,1,1,91.002\n",
-    )
-
-    _write_csv(
-        legacy_planet,
-        "Transits,Transit_Start,Transit_Stop,Transit_Coverage,SAA_Overlap\n"
-        "0,1,2,0.5,0.0\n",
-    )
-    _write_csv(
-        rework_planet,
-        "Transits,Transit_Start,Transit_Stop,Transit_Coverage,Transit_Overlap,SAA_Overlap\n"
-        "0,1,2,0.6,0.0,0.1\n",
-    )
-
-    summary = compare_visibility_trees(legacy_root, rework_root, atol=1e-4)
-
-    assert isinstance(summary, ComparisonSummary)
-    assert len(summary.missing_in_legacy) == 0
-    assert len(summary.missing_in_rework) == 0
-
-    differing = {result.path: result for result in summary.differing_files}
-    assert Path("Star/Visibility for Star.csv") in differing
-    assert differing[Path("Star/Visibility for Star.csv")].visible_mismatches == 1
-    assert differing[Path("Star/Visibility for Star.csv")].numeric_deltas["Earth_Sep"] == pytest.approx(0.002)
-
-    assert Path("Star/Planet/Visibility for Planet.csv") in differing
-    planet_result = differing[Path("Star/Planet/Visibility for Planet.csv")]
-    assert planet_result.extra_columns_rework == ("Transit_Overlap",)
-    assert planet_result.numeric_deltas["Transit_Coverage"] == pytest.approx(0.1)
-    assert planet_result.numeric_deltas["SAA_Overlap"] == pytest.approx(0.1)
-
-
-def test_compare_and_print_returns_nonzero_for_differences(tmp_path, monkeypatch):
-    legacy_root = tmp_path / "legacy"
-    rework_root = tmp_path / "rework"
-
-    _write_csv(
-        legacy_root / "file.csv",
-        "Visible\n0\n",
-    )
-    _write_csv(
-        rework_root / "file.csv",
-        "Visible\n1\n",
-    )
-
-    captured = []
-
-    def fake_print(message: str) -> None:
-        captured.append(message)
-
-    monkeypatch.setattr(diff_module, "print", fake_print, raising=False)
-
-    summary = diff_module.compare_and_print(legacy_root, rework_root)
-
-    assert summary.identical is False
-    assert any("Total differing files: 1" in line for line in captured)
-
-
-def test_compare_and_print_returns_zero_for_matches(tmp_path, monkeypatch):
-    legacy_root = tmp_path / "legacy"
-    rework_root = tmp_path / "rework"
-
-    _write_csv(
-        legacy_root / "file.csv",
-        "Visible\n1\n",
-    )
-    _write_csv(
-        rework_root / "file.csv",
-        "Visible\n1\n",
-    )
-
-    captured = []
-
-    def fake_print(message: str) -> None:
-        captured.append(message)
-
-    monkeypatch.setattr(diff_module, "print", fake_print, raising=False)
-
-    summary = diff_module.compare_and_print(legacy_root, rework_root)
-
-    assert summary.identical is True
-    assert any("Total differing files: 0" in line for line in captured)

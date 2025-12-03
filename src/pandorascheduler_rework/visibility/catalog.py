@@ -161,6 +161,9 @@ def _build_star_visibility(
     from astropy.time import Time
     time_utc = Time(payload["Time(MJD_UTC)"], format="mjd", scale="utc")
     datetime_utc = time_utc.to_datetime()
+    
+    # Round to nearest second to avoid microsecond precision in CSV output
+    datetime_utc = [(dt + timedelta(microseconds=500_000)).replace(microsecond=0) for dt in datetime_utc]
 
     data = {
         "Time(MJD_UTC)": payload["Time(MJD_UTC)"],

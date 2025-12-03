@@ -31,7 +31,6 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.utils import time as time_utils
 from pandorascheduler_rework.utils.array_ops import (
     break_long_sequences,
     remove_short_sequences,
@@ -143,7 +142,8 @@ class _ScienceCalendarBuilder:
             created_value = raw_created
         else:
             timestamp = raw_created or datetime.now()
-            created_value = str(time_utils.round_to_nearest_second(timestamp))
+            # Round to nearest second
+            created_value = str((timestamp + timedelta(microseconds=500_000)).replace(microsecond=0))
 
         attrs = {
             "Valid_From": valid_from,
@@ -600,7 +600,8 @@ def _extract_visibility_segment(
 
     window_indices = [idx for idx, include in enumerate(mask) if include]
     filtered_times = [raw_times[idx] for idx in window_indices]
-    visit_times = [time_utils.round_to_nearest_second(value) for value in filtered_times]
+    # Round each time to nearest second
+    visit_times = [(t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in filtered_times]
 
     flags = [float(visibility_df.iloc[idx]["Visible"]) for idx in window_indices]
     filtered_flags, _ = remove_short_sequences(
