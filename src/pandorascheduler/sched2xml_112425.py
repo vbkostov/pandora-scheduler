@@ -29,7 +29,7 @@ PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(PACKAGEDIR, "data")
 
 schedule_path = os.path.join(
-    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05.csv"
+    DATA_DIR, "baseline", "Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2027-02-05_copy.csv"
 )
 tar_vis_path = os.path.join(DATA_DIR, "targets")
 aux_vis_path = os.path.join(DATA_DIR, "aux_targets")

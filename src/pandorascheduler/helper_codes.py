@@ -1135,7 +1135,7 @@ def create_aux_list(target_definition_files, PACKAGEDIR):
     combined_df = combined_df[sorted_columns]
 
     # Write the result to a new CSV file
-    output_file = f"{PACKAGEDIR}/data/aux_list_new.csv"
+    output_file = f"{PACKAGEDIR}/data/all_targets.csv"
     combined_df.to_csv(output_file, index=False)
 
     # print(f"Combined CSV created with {len(common_columns)} common columns.")
