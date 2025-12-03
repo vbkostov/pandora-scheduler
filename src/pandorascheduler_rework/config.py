@@ -179,68 +179,8 @@ class PandoraSchedulerConfig:
             )
     
     # ============================================================================
-    # CONVERSION METHODS (for backward compatibility)
+    # CONVERSION METHODS (Removed)
     # ============================================================================
-    
-    def to_scheduler_config(self):
-        """Convert to legacy SchedulerConfig format."""
-        from pandorascheduler_rework.scheduler import SchedulerConfig
-        
-        return SchedulerConfig(
-            obs_window=self.obs_window,
-            transit_coverage_min=self.transit_coverage_min,
-            transit_scheduling_weights=self.transit_scheduling_weights,
-            min_visibility=self.min_visibility,
-            deprioritization_limit_hours=self.deprioritization_limit_hours,
-            commissioning_days=self.commissioning_days,
-            aux_key=self.aux_sort_key,
-            show_progress=self.show_progress,
-            std_obs_duration_hours=self.std_obs_duration_hours,
-            std_obs_frequency_days=self.std_obs_frequency_days,
-        )
-    
-    def to_science_calendar_config(self):
-        """Convert to legacy ScienceCalendarConfig format."""
-        from pandorascheduler_rework.science_calendar import ScienceCalendarConfig
-        
-        return ScienceCalendarConfig(
-            visit_limit=self.visit_limit,
-            obs_sequence_duration_min=self.obs_sequence_duration_min,
-            occ_sequence_limit_min=self.occ_sequence_limit_min,
-            min_sequence_minutes=self.min_sequence_minutes,
-            break_occultation_sequences=self.break_occultation_sequences,
-            use_target_list_for_occultations=self.use_target_list_for_occultations,
-            prioritise_occultations_by_slew=self.prioritise_occultations_by_slew,
-            calendar_weights=self.transit_scheduling_weights,
-            keepout_angles=(
-                self.sun_avoidance_deg,
-                self.moon_avoidance_deg,
-                self.earth_avoidance_deg,
-            ),
-            author=self.author,
-            show_progress=self.show_progress,
-            created_timestamp=self.created_timestamp,
-        )
-    
-    def to_visibility_config(self):
-        """Convert to legacy VisibilityConfig format."""
-        from pandorascheduler_rework.visibility.config import VisibilityConfig
-        
-        if self.targets_manifest is None:
-            raise ValueError("targets_manifest required for VisibilityConfig")
-        if self.gmat_ephemeris is None:
-            raise ValueError("gmat_ephemeris required for VisibilityConfig")
-        
-        return VisibilityConfig(
-            window_start=self.window_start,
-            window_end=self.window_end,
-            gmat_ephemeris=self.gmat_ephemeris,
-            target_list=self.targets_manifest,
-            partner_list=None,  # Can be added to PandoraSchedulerConfig if needed
-            output_root=self.output_dir,
-            sun_avoidance_deg=self.sun_avoidance_deg,
-            moon_avoidance_deg=self.moon_avoidance_deg,
-            earth_avoidance_deg=self.earth_avoidance_deg,
-            force=self.force_regenerate,
-            target_filters=self.target_filters,
-        )
+    # The legacy conversion methods (to_scheduler_config, to_science_calendar_config,
+    # to_visibility_config) have been removed as part of the configuration consolidation.
+    # Downstream components now accept PandoraSchedulerConfig directly.

@@ -11,7 +11,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
-from pandorascheduler_rework.visibility.config import VisibilityConfig
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.visibility.geometry import (
     build_minute_cadence,
     compute_saa_crossings,
@@ -31,7 +31,22 @@ def _to_gmat_mod_julian(times: Time) -> np.ndarray:
     return mjd - 29999.5
 
 
-def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
+@pytest.fixture
+def mock_config(tmp_path):
+    return PandoraSchedulerConfig(
+        window_start=datetime(2025, 2, 5),
+        window_end=datetime(2025, 2, 5, 6, 0, 0),
+        gmat_ephemeris=tmp_path / "gmat.csv",
+        targets_manifest=tmp_path / "targets.csv",
+        output_dir=tmp_path / "output",
+        force_regenerate=True,
+        sun_avoidance_deg=45.0,
+        moon_avoidance_deg=30.0,
+        earth_avoidance_deg=20.0,
+    )
+
+
+def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path, mock_config):
     window_start = datetime(2025, 2, 5, 0, 0, 0)
     window_end = window_start + timedelta(hours=6)
 
@@ -90,26 +105,16 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
             "Transit Epoch (BJD_TDB-2400000.5)": [epoch_bjd_tdb - 2400000.5],
         }
     )
-    target_path = tmp_path / "target_list.csv"
+    target_path = mock_config.targets_manifest
     target_df.to_csv(target_path, index=False)
 
-    output_root = tmp_path / "visibility_outputs"
-
-    config = VisibilityConfig(
-        window_start=window_start,
-        window_end=window_end,
-        gmat_ephemeris=gmat_path,
-        target_list=target_path,
-        partner_list=None,
-        output_root=output_root,
-        sun_avoidance_deg=45.0,
-        moon_avoidance_deg=30.0,
-        earth_avoidance_deg=20.0,
-        force=True,
+    build_visibility_catalog(
+        mock_config,
+        target_list=mock_config.targets_manifest,
+        output_subpath="targets"
     )
 
-    build_visibility_catalog(config)
-
+    output_root = mock_config.output_dir / "data" / "targets"
     star_output = output_root / "TestStar" / "Visibility for TestStar.csv"
     planet_output = output_root / "TestStar" / "TestPlanet" / "Visibility for TestPlanet.csv"
 

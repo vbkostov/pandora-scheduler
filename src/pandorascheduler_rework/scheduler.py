@@ -22,24 +22,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-@dataclass(frozen=True)
-class SchedulerConfig:
-    """Configuration knobs for the scheduling loop."""
-
-    obs_window: timedelta
-    transit_coverage_min: float
-    transit_scheduling_weights: tuple[float, float, float]
-    min_visibility: float
-    deprioritization_limit_hours: float
-    commissioning_days: int = 0
-    aux_key: Optional[str] = "sort_by_tdf_priority"
-    show_progress: bool = False
-    std_obs_duration_hours: float = 0.5
-    std_obs_frequency_days: float = 3.0
-
-    def __post_init__(self) -> None:
-        if not np.isclose(sum(self.transit_scheduling_weights), 1.0):
-            raise ValueError("transit_scheduling_weights must sum to 1.0")
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 
 @dataclass(frozen=True)
@@ -106,7 +89,7 @@ class SchedulerOutputs:
     tracker_pickle_path: Optional[Path]
 
 
-def run_scheduler(inputs: SchedulerInputs, config: SchedulerConfig) -> SchedulerOutputs:
+def run_scheduler(inputs: SchedulerInputs, config: PandoraSchedulerConfig) -> SchedulerOutputs:
     """Execute the scheduling loop to mirror the legacy Schedule function."""
 
     commissioning_offset = timedelta(days=config.commissioning_days)
@@ -312,7 +295,7 @@ def run_scheduler(inputs: SchedulerInputs, config: SchedulerConfig) -> Scheduler
 
 def _initialize_tracker(
     inputs: SchedulerInputs,
-    config: SchedulerConfig,
+    config: PandoraSchedulerConfig,
     pandora_start: datetime,
     pandora_stop: datetime,
     sched_start: datetime,
@@ -447,7 +430,7 @@ def _persist_outputs(
     schedule: pd.DataFrame,
     tracker: pd.DataFrame,
     inputs: SchedulerInputs,
-    config: SchedulerConfig,
+    config: PandoraSchedulerConfig,
     pandora_start: datetime,
     pandora_stop: datetime,
 ) -> tuple[Path, Path, Path]:
@@ -687,7 +670,7 @@ def _handle_targets_of_opportunity(
 def _schedule_auxiliary_target(
     start: datetime,
     stop: datetime,
-    config: SchedulerConfig,
+    config: PandoraSchedulerConfig,
     state: SchedulerState,
     inputs: SchedulerInputs,
 ) -> tuple[pd.DataFrame, str]:
@@ -778,7 +761,7 @@ def _schedule_auxiliary_target(
         stats.total_time += obs_std_duration
         stats.last_priority = priority_std
 
-    if config.aux_key is None:
+    if config.aux_sort_key is None:
         scheduled_rows.append(
             ["Free Time", active_start, stop, float("nan"), float("nan")]
         )
@@ -824,7 +807,7 @@ def _schedule_auxiliary_target(
             )
             aux_targets.loc[mask, "Priority"] = mapped_priorities
 
-        if config.aux_key in {"sort_by_tdf_priority", "closest"}:
+        if config.aux_sort_key in {"sort_by_tdf_priority", "closest"}:
             aux_targets = aux_targets.sort_values(
                 "Priority", ascending=False, ignore_index=True
             )
@@ -871,7 +854,7 @@ def _schedule_auxiliary_target(
                 vis_percentages.append(visibility)
 
         if vis_all:
-            if config.aux_key in {"sort_by_tdf_priority", "closest"}:
+            if config.aux_sort_key in {"sort_by_tdf_priority", "closest"}:
                 chosen_idx = vis_all[0]
             else:
                 chosen_idx = int(np.random.randint(0, len(vis_all)))

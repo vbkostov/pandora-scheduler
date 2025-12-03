@@ -412,8 +412,6 @@ def main() -> int:
         xml_path = None
         if not args.skip_xml and result.schedule_csv:
             # Use the same config object to create calendar settings
-            calendar_config = config.to_science_calendar_config()
-            
             # Ensure we point to the correct data directory (where manifests are)
             # The pipeline copies/generates data into output_dir/data
             data_dir = config.output_dir / "data"
@@ -422,10 +420,10 @@ def main() -> int:
                 schedule_csv=result.schedule_csv,
                 data_dir=data_dir,
             )
-            
+
             xml_path = generate_science_calendar(
                 inputs=inputs,
-                config=calendar_config,
+                config=config,
             )
             logger.info(f"Science calendar written to: {xml_path}")
 

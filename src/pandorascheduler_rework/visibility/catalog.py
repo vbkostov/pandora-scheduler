@@ -16,7 +16,7 @@ from astropy.time import Time
 from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.io import read_csv_cached
 
-from .config import VisibilityConfig
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from .geometry import (
     MinuteCadence,
     build_minute_cadence,
@@ -27,15 +27,22 @@ from .geometry import (
 LOGGER = logging.getLogger(__name__)
 
 
-def build_visibility_catalog(config: VisibilityConfig) -> None:
-    """Recreate legacy visibility outputs for the requested targets."""
+def build_visibility_catalog(
+    config: PandoraSchedulerConfig,
+    target_list: Path,
+    partner_list: Path | None = None,
+    output_subpath: str = "targets",
+) -> None:
+    """Generate visibility outputs for the requested targets."""
 
-    legacy_package_root = Path(__file__).resolve().parents[2] / "pandorascheduler"
-    output_root = config.resolve_output_root(legacy_package_root)
+    if not config.output_dir:
+        raise ValueError("config.output_dir is required for visibility generation")
+    
+    output_root = config.output_dir / "data" / output_subpath
     output_root.mkdir(parents=True, exist_ok=True)
 
-    target_path = _resolve_data_path(config.target_list, legacy_package_root)
-    gmat_path = _resolve_data_path(config.gmat_ephemeris, legacy_package_root)
+    target_path = target_list if target_list.is_absolute() else target_list.resolve()
+    gmat_path = config.gmat_ephemeris if config.gmat_ephemeris.is_absolute() else config.gmat_ephemeris.resolve()
 
     target_manifest = _load_target_manifest(target_path, config.target_filters)
     if target_manifest.empty:
@@ -54,7 +61,7 @@ def build_visibility_catalog(config: VisibilityConfig) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_path = output_dir / f"Visibility for {star_name}.csv"
-        if output_path.exists() and not config.force:
+        if output_path.exists() and not config.force_regenerate:
             LOGGER.info("Skipping %s; visibility already exists", star_name)
             continue
 
@@ -78,8 +85,8 @@ def build_visibility_catalog(config: VisibilityConfig) -> None:
 
     planet_manifests: list[tuple[pd.DataFrame, Path]] = [(target_manifest, target_path)]
 
-    if config.partner_list is not None:
-        partner_path = _resolve_data_path(config.partner_list, legacy_package_root)
+    if partner_list is not None:
+        partner_path = partner_list if partner_list.is_absolute() else partner_list.resolve()
         partner_manifest = _load_target_manifest(partner_path, config.target_filters)
         if not partner_manifest.empty:
             star_metadata.update(_build_star_metadata(partner_manifest))
@@ -145,7 +152,7 @@ def _build_base_payload(ephemeris, cadence: MinuteCadence) -> dict[str, np.ndarr
 def _build_star_visibility(
     payload: dict[str, np.ndarray],
     star_coord: SkyCoord,
-    config: VisibilityConfig,
+    config: PandoraSchedulerConfig,
 ) -> pd.DataFrame:
     sun_sep = payload["sun_pc"].separation(star_coord).deg
     moon_sep = payload["moon_pc"].separation(star_coord).deg
@@ -202,12 +209,6 @@ def _resolve_star_coord(
     raise RuntimeError(f"No coordinates found in catalog for {star_name}")
 
 
-def _resolve_data_path(candidate: Path, legacy_root: Path) -> Path:
-    if candidate.is_absolute():
-        return candidate
-    return legacy_root / "data" / candidate
-
-
 def _build_star_metadata(manifest: pd.DataFrame) -> dict[str, tuple[float, float]]:
     if "RA" not in manifest.columns or "DEC" not in manifest.columns:
         return {}
@@ -227,7 +228,7 @@ def _build_planet_transits(
     manifest_path: Path,
     output_root: Path,
     star_metadata: dict[str, tuple[float, float]],
-    config: VisibilityConfig,
+    config: PandoraSchedulerConfig,
 ) -> list[tuple[str, str]]:
     if manifest.empty:
         return []
@@ -267,7 +268,7 @@ def _build_planet_transits(
         planet_dir = output_root / star_name / planet_name
         planet_dir.mkdir(parents=True, exist_ok=True)
         planet_output = planet_dir / f"Visibility for {planet_name}.csv"
-        if planet_output.exists() and not config.force:
+        if planet_output.exists() and not config.force_regenerate:
             LOGGER.info(
                 "Skipping %s/%s; planet visibility already exists", star_name, planet_name
             )

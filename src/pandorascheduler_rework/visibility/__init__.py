@@ -7,4 +7,3 @@ latest roadmap.
 """
 
 from .catalog import build_visibility_catalog  # noqa: F401
-from .config import VisibilityConfig  # noqa: F401

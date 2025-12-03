@@ -13,14 +13,12 @@ import pandas as pd
 from pandorascheduler_rework import observation_utils as rework_helper
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
-    SchedulerConfig,
     SchedulerInputs,
     SchedulerPaths,
     run_scheduler,
 )
 from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
-from pandorascheduler_rework.visibility.config import VisibilityConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -174,9 +172,9 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
         tracker_pickle_path=_coerce_optional_path(extra_inputs.get("tracker_pickle")),
     )
 
-    scheduler_config = config.to_scheduler_config()
-
-    outputs = run_scheduler(scheduler_inputs, scheduler_config)
+    # scheduler_config = config.to_scheduler_config() (Removed)
+    
+    outputs = run_scheduler(scheduler_inputs, config)
 
     reports: Dict[str, Path] = {}
     if outputs.observation_report_path is not None:
@@ -218,56 +216,40 @@ def _maybe_generate_visibility(
         return
 
     # 1. Primary Targets -> data/targets
-    primary_config = _build_visibility_config(
+    LOGGER.info("Generating visibility for Primary Targets in %s", config.output_dir / "data" / "targets" if config.output_dir else "output/data/targets")
+    build_visibility_catalog(
         config,
-        paths,
-        pandora_start,
-        pandora_stop,
         target_list=primary_target_csv,
         partner_list=auxiliary_target_csv,
         output_subpath="targets",
     )
-    LOGGER.info("Generating visibility for Primary Targets in %s", primary_config.output_root)
-    build_visibility_catalog(primary_config)
 
     # 2. Auxiliary Targets -> data/aux_targets
-    aux_config = _build_visibility_config(
+    LOGGER.info("Generating visibility for Auxiliary Targets in %s", config.output_dir / "data" / "aux_targets" if config.output_dir else "output/data/aux_targets")
+    build_visibility_catalog(
         config,
-        paths,
-        pandora_start,
-        pandora_stop,
         target_list=auxiliary_target_csv,
         partner_list=None,
         output_subpath="aux_targets",
     )
-    LOGGER.info("Generating visibility for Auxiliary Targets in %s", aux_config.output_root)
-    build_visibility_catalog(aux_config)
 
     # 3. Monitoring Targets -> data/aux_targets
-    mon_config = _build_visibility_config(
+    LOGGER.info("Generating visibility for Monitoring Targets in %s", config.output_dir / "data" / "aux_targets" if config.output_dir else "output/data/aux_targets")
+    build_visibility_catalog(
         config,
-        paths,
-        pandora_start,
-        pandora_stop,
         target_list=monitoring_target_csv,
         partner_list=None,
         output_subpath="aux_targets",
     )
-    LOGGER.info("Generating visibility for Monitoring Targets in %s", mon_config.output_root)
-    build_visibility_catalog(mon_config)
 
     # 3. Occultation Targets -> data/aux_targets
-    occ_config = _build_visibility_config(
+    LOGGER.info("Generating visibility for Occultation Targets in %s", config.output_dir / "data" / "aux_targets" if config.output_dir else "output/data/aux_targets")
+    build_visibility_catalog(
         config,
-        paths,
-        pandora_start,
-        pandora_stop,
         target_list=occultation_target_csv,
         partner_list=None,
         output_subpath="aux_targets",
     )
-    LOGGER.info("Generating visibility for Occultation Targets in %s", occ_config.output_root)
-    build_visibility_catalog(occ_config)
 
 
 def _generate_target_manifests(
@@ -302,54 +284,7 @@ def _generate_target_manifests(
         primary_target_csv.parent.parent,
     )
 
-def _build_visibility_config(
-    config: PandoraSchedulerConfig,
-    paths: SchedulerPaths,
-    pandora_start: datetime,
-    pandora_stop: datetime,
-    target_list: Path,
-    partner_list: Optional[Path],
-    output_subpath: str,
-) -> VisibilityConfig:
-    extra_inputs = config.extra_inputs
-
-    gmat_path = config.gmat_ephemeris or extra_inputs.get("visibility_gmat")
-    if gmat_path is None:
-        raise ValueError("gmat_ephemeris is required for visibility generation")
-
-    target_list_path = extra_inputs.get("visibility_target_list") or target_list
-
-    partner_override = extra_inputs.get("visibility_partner_list")
-    
-    if partner_override is not None:
-        partner_list = partner_override
-    else:
-        # Use the passed partner_list argument as-is (which is usually auxiliary_target_csv)
-        pass
-
-    output_override = extra_inputs.get("visibility_output_root")
-    if output_override is not None:
-        output_root = output_override
-    else:
-        # Use config output dir + subpath
-        if config.output_dir:
-            output_root = config.output_dir / "data" / output_subpath
-        else:
-            output_root = Path("output") / "data" / output_subpath
-
-    return VisibilityConfig(
-        window_start=pandora_start,
-        window_end=pandora_stop,
-        gmat_ephemeris=gmat_path,
-        target_list=target_list_path,
-        partner_list=partner_list,
-        output_root=output_root,
-        sun_avoidance_deg=config.sun_avoidance_deg,
-        moon_avoidance_deg=config.moon_avoidance_deg,
-        earth_avoidance_deg=config.earth_avoidance_deg,
-        force=config.force_regenerate,
-        target_filters=config.target_filters,
-    )
+# _build_visibility_config removed (legacy)
 
 
 # _build_config removed (legacy)

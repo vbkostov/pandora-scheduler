@@ -57,67 +57,7 @@ class TestBuildScheduleV2:
         with pytest.raises(Exception):  # FrozenInstanceError
             config.transit_coverage_min = 0.5  # type: ignore
 
-    def test_conversion_to_scheduler_config(self):
-        """Test conversion to legacy SchedulerConfig."""
-        config = PandoraSchedulerConfig(
-            window_start=datetime(2026, 2, 5),
-            window_end=datetime(2026, 2, 19),
-            targets_manifest=Path("data"),
-            transit_coverage_min=0.3,
-            deprioritization_limit_hours=72.0,
-        )
-        
-        scheduler_config = config.to_scheduler_config()
-        
-        assert scheduler_config.transit_coverage_min == 0.3
-        assert scheduler_config.deprioritization_limit_hours == 72.0
-        assert scheduler_config.transit_scheduling_weights == (0.8, 0.0, 0.2)
-
-    def test_conversion_to_science_calendar_config(self):
-        """Test conversion to legacy ScienceCalendarConfig."""
-        config = PandoraSchedulerConfig(
-            window_start=datetime(2026, 2, 5),
-            window_end=datetime(2026, 2, 19),
-            targets_manifest=Path("data"),
-            obs_sequence_duration_min=120,
-            occ_sequence_limit_min=60,
-        )
-        
-        calendar_config = config.to_science_calendar_config()
-        
-        assert calendar_config.obs_sequence_duration_min == 120
-        assert calendar_config.occ_sequence_limit_min == 60
-        assert calendar_config.keepout_angles == (91.0, 25.0, 86.0)
-
-    def test_conversion_to_visibility_config_requires_paths(self):
-        """Test that visibility config conversion requires GMAT ephemeris."""
-        config = PandoraSchedulerConfig(
-            window_start=datetime(2026, 2, 5),
-            window_end=datetime(2026, 2, 19),
-            targets_manifest=Path("data"),
-            # No gmat_ephemeris provided
-        )
-        
-        with pytest.raises(ValueError, match="gmat_ephemeris required"):
-            config.to_visibility_config()
-
-    def test_conversion_to_visibility_config_success(self):
-        """Test successful conversion to VisibilityConfig."""
-        config = PandoraSchedulerConfig(
-            window_start=datetime(2026, 2, 5),
-            window_end=datetime(2026, 2, 19),
-            targets_manifest=Path("data/targets.csv"),
-            gmat_ephemeris=Path("data/ephemeris.txt"),
-            output_dir=Path("output"),
-            sun_avoidance_deg=95.0,
-        )
-        
-        vis_config = config.to_visibility_config()
-        
-        assert vis_config.window_start == datetime(2026, 2, 5)
-        assert vis_config.window_end == datetime(2026, 2, 19)
-        assert vis_config.gmat_ephemeris == Path("data/ephemeris.txt")
-        assert vis_config.sun_avoidance_deg == 95.0
+# Legacy conversion tests removed
 
 
 class TestBuildScheduleV2Integration:

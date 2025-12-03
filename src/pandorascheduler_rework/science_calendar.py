@@ -49,33 +49,19 @@ class ScienceCalendarInputs:
     data_dir: Path
 
 
-@dataclass(frozen=True)
-class ScienceCalendarConfig:
-    """Tunable knobs mirroring the legacy script defaults."""
-
-    visit_limit: Optional[int] = None
-    obs_sequence_duration_min: int = 90
-    occ_sequence_limit_min: int = 50
-    min_sequence_minutes: int = 5
-    break_occultation_sequences: bool = True
-    use_target_list_for_occultations: bool = False
-    prioritise_occultations_by_slew: bool = False
-    calendar_weights: tuple[float, float, float] = (0.8, 0.0, 0.2)
-    keepout_angles: tuple[float, float, float] = (91.0, 25.0, 63.0)
-    author: Optional[str] = None
-    show_progress: bool = False
-    created_timestamp: Optional[datetime | str] = None
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 
 def generate_science_calendar(
     inputs: ScienceCalendarInputs,
+    config: PandoraSchedulerConfig,
     output_path: Optional[Path] = None,
-    config: Optional[ScienceCalendarConfig] = None,
 ) -> Path:
     """Generate the science calendar XML, matching the legacy behaviour."""
 
-    resolved = config or ScienceCalendarConfig()
-    builder = _ScienceCalendarBuilder(inputs, resolved)
+    """Generate the science calendar XML, matching the legacy behaviour."""
+
+    builder = _ScienceCalendarBuilder(inputs, config)
     calendar_element = builder.build_calendar()
     xml_string = _serialise_calendar(calendar_element)
 
@@ -88,7 +74,7 @@ def generate_science_calendar(
 class _ScienceCalendarBuilder:
     """Encapsulates the translation from CSV schedules to XML."""
 
-    def __init__(self, inputs: ScienceCalendarInputs, config: ScienceCalendarConfig) -> None:
+    def __init__(self, inputs: ScienceCalendarInputs, config: PandoraSchedulerConfig) -> None:
         self.inputs = inputs
         self.config = config
         self.schedule = read_csv_cached(str(inputs.schedule_csv))
@@ -131,8 +117,15 @@ class _ScienceCalendarBuilder:
         return root
 
     def _add_meta(self, root: ET.Element) -> None:
-        weights = ", ".join(f"{value:.1f}" for value in self.config.calendar_weights)
-        keepout = ", ".join(f"{value:.1f}" for value in self.config.keepout_angles)
+        weights = ", ".join(f"{value:.1f}" for value in self.config.transit_scheduling_weights)
+        keepout = ", ".join(
+            f"{value:.1f}"
+            for value in (
+                self.config.sun_avoidance_deg,
+                self.config.moon_avoidance_deg,
+                self.config.earth_avoidance_deg,
+            )
+        )
 
         valid_from = str(self.schedule.iloc[0]["Observation Start"])
         expires = str(self.schedule.iloc[self.schedule.index[-1]]["Observation Stop"])
@@ -772,8 +765,9 @@ def _transit_windows(
         scale="utc",
     ).to_datetime()
 
-    start = [value.replace(second=0, microsecond=0) for value in start_times]
-    stop = [value.replace(second=0, microsecond=0) for value in stop_times]
+    # Round each time to nearest second (matching legacy round_to_nearest_second behavior)
+    start = [(t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in start_times]
+    stop = [(t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in stop_times]
     return start, stop
 
 
