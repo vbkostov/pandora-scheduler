@@ -1,10 +1,8 @@
 """XML builder for observation sequences."""
 
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
-from typing import List, Tuple
+from datetime import datetime
 
-import numpy as np
 import pandas as pd
 
 from pandorascheduler_rework.xml.parameters import (

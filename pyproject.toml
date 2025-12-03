@@ -19,6 +19,7 @@ tqdm = "^4.66.0"
 black = "^24.1.0"
 flake8 = "^7.0.0"
 pytest = "^8.2.0"
+ruff = "^0.14.7"
 
 [tool.pytest.ini_options]
 filterwarnings = [

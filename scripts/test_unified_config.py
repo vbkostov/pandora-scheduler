@@ -6,11 +6,6 @@ from datetime import datetime
 from pathlib import Path
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule
-from pandorascheduler_rework.science_calendar import (
-    generate_science_calendar,
-    ScienceCalendarInputs,
-)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -35,7 +30,7 @@ def main():
         show_progress=True,
     )
     
-    print(f"Config created:")
+    print("Config created:")
     print(f"  Period: {config.window_start} to {config.window_end}")
     print(f"  Transit coverage min: {config.transit_coverage_min}")
     print(f"  Weights: {config.transit_scheduling_weights}")

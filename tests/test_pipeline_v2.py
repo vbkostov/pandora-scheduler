@@ -1,6 +1,5 @@
 """Unit tests for build_schedule() pipeline API."""
 
-import tempfile
 from datetime import datetime
 from pathlib import Path
 

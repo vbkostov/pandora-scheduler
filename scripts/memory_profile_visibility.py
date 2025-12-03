@@ -113,11 +113,11 @@ def estimate_memory_usage(results):
         print(f"   Recommended: Unlimited caching (or set maxsize={sum(len(f) for f in results.values())})")
     elif estimated_mem < 2000:  # Less than 2 GB
         print("⚠️  MODERATE: Memory usage is acceptable but should be limited.")
-        print(f"   Recommended: Set maxsize=256 to limit cache")
+        print("   Recommended: Set maxsize=256 to limit cache")
     else:  # > 2 GB
         print("❌ HIGH: Memory usage could be problematic.")
-        print(f"   Recommended: Set maxsize=128 or use LRU eviction")
-        print(f"   Consider: Lazy loading or streaming for large files")
+        print("   Recommended: Set maxsize=128 or use LRU eviction")
+        print("   Consider: Lazy loading or streaming for large files")
     
     print()
 

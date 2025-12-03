@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-import pandas as pd
 
 from pandorascheduler_rework import observation_utils as rework_helper
 from pandorascheduler_rework.config import PandoraSchedulerConfig

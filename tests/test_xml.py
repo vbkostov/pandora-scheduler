@@ -3,7 +3,6 @@
 from datetime import datetime
 import xml.etree.ElementTree as ET
 import pandas as pd
-import pytest
 
 from pandorascheduler_rework.xml.builder import (
     observation_sequence,

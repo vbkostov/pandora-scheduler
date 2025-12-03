@@ -54,7 +54,6 @@ from pathlib import Path
 from typing import Dict, Optional, Any
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-import pandas as pd
 from pandorascheduler_rework.pipeline import build_schedule, SchedulerResult
 from pandorascheduler_rework.science_calendar import (
     generate_science_calendar,

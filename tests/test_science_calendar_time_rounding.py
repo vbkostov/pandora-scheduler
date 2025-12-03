@@ -6,7 +6,6 @@ the removed time_utils.round_to_nearest_second() function.
 """
 
 import pandas as pd
-import pytest
 from datetime import datetime, timedelta
 from astropy.time import Time
 

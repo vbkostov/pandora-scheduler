@@ -13,7 +13,6 @@ from astropy import units as u
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.time import Time
 
-from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.io import read_csv_cached
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig

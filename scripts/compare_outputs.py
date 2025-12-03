@@ -1,8 +1,6 @@
 import pandas as pd
 import xml.etree.ElementTree as ET
-import sys
 from pathlib import Path
-import numpy as np
 
 def compare_csvs(file1, file2, index_col=None):
     print(f"Comparing {file1} vs {file2}...")

@@ -93,7 +93,7 @@ def compare_xmls(legacy_path, rework_path):
         if id_elem is not None:
             rework_visits[id_elem.text] = extract_visit_data(v)
     
-    print(f"\n2. VISIT COUNT")
+    print("\n2. VISIT COUNT")
     print("-" * 100)
     print(f"  Legacy: {len(legacy_visits)} visits")
     print(f"  Rework: {len(rework_visits)} visits")

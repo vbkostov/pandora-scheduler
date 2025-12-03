@@ -167,7 +167,7 @@ def main():
     occ_legacy = len(legacy_by_cat.get('Occultation (Gaia)', []))
     occ_rework = len(rework_by_cat.get('Occultation (Gaia)', []))
     
-    print(f"1. OCCULTATION TARGETS:")
+    print("1. OCCULTATION TARGETS:")
     print(f"   - Legacy has {occ_legacy} occultations not in rework")
     print(f"   - Rework has {occ_rework} occultations not in legacy")
     print(f"   - Net change: +{occ_rework - occ_legacy} occultations in rework")
@@ -177,14 +177,14 @@ def main():
     aux_legacy = len(legacy_by_cat.get('Auxiliary Standard', []))
     aux_rework = len(rework_by_cat.get('Auxiliary Standard', []))
     
-    print(f"2. AUXILIARY STANDARDS (BD/GD targets):")
+    print("2. AUXILIARY STANDARDS (BD/GD targets):")
     print(f"   - Legacy has {aux_legacy} auxiliary standards not in rework")
     print(f"   - Rework has {aux_rework} auxiliary standards not in legacy")
     print(f"   - Net change: {aux_rework - aux_legacy} auxiliary standards")
     print()
     
     if aux_legacy > 0:
-        print(f"   Missing auxiliary standards in rework:")
+        print("   Missing auxiliary standards in rework:")
         aux_targets = set(k[0] for k in legacy_by_cat.get('Auxiliary Standard', []))
         for target in sorted(aux_targets):
             count = sum(1 for k in legacy_by_cat['Auxiliary Standard'] if k[0] == target)
@@ -195,13 +195,13 @@ def main():
     exo_legacy = len(legacy_by_cat.get('Exoplanet/Star', []))
     exo_rework = len(rework_by_cat.get('Exoplanet/Star', []))
     
-    print(f"3. EXOPLANETS/STARS:")
+    print("3. EXOPLANETS/STARS:")
     print(f"   - Legacy has {exo_legacy} exoplanet visits not in rework")
     print(f"   - Rework has {exo_rework} exoplanet visits not in legacy")
     print()
     
     if exo_legacy > 0:
-        print(f"   Exoplanet targets missing in rework:")
+        print("   Exoplanet targets missing in rework:")
         exo_targets = defaultdict(int)
         for k in legacy_by_cat.get('Exoplanet/Star', []):
             exo_targets[k[0]] += 1

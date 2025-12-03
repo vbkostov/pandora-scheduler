@@ -35,14 +35,14 @@ def inspect_mismatch():
     target_leg = get_visit_target(root_leg, "0211")
     target_rew = get_visit_target(root_rew, "0211")
     
-    print(f"\nXML Visit 0211 Target:")
+    print("\nXML Visit 0211 Target:")
     print(f"  Legacy: {target_leg}")
     print(f"  Rework: {target_rew}")
     
     # Check CSV for HAT-P-18 and Gaia ID
     legacy_sched_path = list(legacy_dir.glob("Pandora_Schedule_*.csv"))[0]
     df_leg = pd.read_csv(legacy_sched_path)
-    print(f"Legacy CSV Row 210:")
+    print("Legacy CSV Row 210:")
     print(df_leg.iloc[210])
 
     rework_sched_path = list(rework_dir.glob("Pandora_Schedule_*.csv"))[0]
@@ -52,14 +52,14 @@ def inspect_mismatch():
     
     print(f"Unique Targets: {df['Target'].unique().tolist()}")
     
-    print(f"\nSearching CSV for HAT-P-18:")
+    print("\nSearching CSV for HAT-P-18:")
     matches = df[df['Target'] == 'HAT-P-18']
     if not matches.empty:
         print(matches[['Observation Start']].to_string())
     else:
         print("HAT-P-18 NOT FOUND in CSV")
 
-    print(f"\nSearching CSV for G3738601634818313472:")
+    print("\nSearching CSV for G3738601634818313472:")
     matches_gaia = df[df['Target'] == 'G3738601634818313472']
     if not matches_gaia.empty:
         print(matches_gaia.to_string())
@@ -83,7 +83,7 @@ def inspect_mismatch():
             row_index_211 = idx
             break
             
-    print(f"\nCalculated CSV Row for Visit 211:")
+    print("\nCalculated CSV Row for Visit 211:")
     print(f"  Row Index: {row_index_211}")
     print(f"  Target: {target_at_211}")
     

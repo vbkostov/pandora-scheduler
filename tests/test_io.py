@@ -1,10 +1,8 @@
 """Unit tests for utils.io module."""
 
-import tempfile
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from pandorascheduler_rework.utils.io import (
     build_star_visibility_path,

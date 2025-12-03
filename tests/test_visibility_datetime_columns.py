@@ -6,11 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 from astropy.time import Time
 
 from pandorascheduler_rework.visibility.catalog import _build_star_visibility
-from pandorascheduler_rework.visibility.geometry import build_minute_cadence
 
 
 class TestDatetimeColumnGeneration:

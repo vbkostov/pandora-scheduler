@@ -1,9 +1,7 @@
 """XML parameter population logic for NIRDA and VDA."""
 
 import ast
-import re
 import xml.etree.ElementTree as ET
-from typing import Set
 
 import numpy as np
 import pandas as pd

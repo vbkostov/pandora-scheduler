@@ -18,10 +18,9 @@ import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import lru_cache
 from numbers import Number
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 from xml.dom import minidom
 
 import numpy as np

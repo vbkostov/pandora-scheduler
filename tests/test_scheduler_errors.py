@@ -5,11 +5,8 @@ and provides helpful error messages when things go wrong.
 """
 
 import pytest
-import pickle
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 import pandas as pd
-import numpy as np
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (

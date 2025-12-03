@@ -1,5 +1,4 @@
 import logging
-import pandas as pd
 from pathlib import Path
 import sys
 from pandorascheduler_rework import science_calendar
@@ -10,7 +9,7 @@ def regenerate_calendar(output_dir_str: str):
     schedule_csv = list(output_dir.glob("Pandora_Schedule_*.csv"))[0]
     data_dir = output_dir / "data"
     
-    print(f"Regenerating Science Calendar...")
+    print("Regenerating Science Calendar...")
     print(f"  Schedule: {schedule_csv}")
     print(f"  Data Dir: {data_dir}")
     print(f"  Output:   {output_dir}")

@@ -6,8 +6,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from astropy import units as u
-from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
