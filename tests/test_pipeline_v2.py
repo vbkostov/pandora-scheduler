@@ -103,12 +103,6 @@ class TestConfigDocumentation:
 
     def test_all_fields_have_docstrings(self):
         """Test that all config fields have documentation."""
-        config = PandoraSchedulerConfig(
-            window_start=datetime(2026, 2, 5),
-            window_end=datetime(2026, 2, 19),
-            targets_manifest=Path("data"),
-        )
-        
         # Check that key fields have docstrings in the class
         assert PandoraSchedulerConfig.__doc__ is not None
         assert "Master configuration" in PandoraSchedulerConfig.__doc__

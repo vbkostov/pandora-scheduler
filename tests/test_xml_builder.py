@@ -514,8 +514,13 @@ def test_calendar_sequences_below_minimum(tmp_path, monkeypatch):
     meta = root.find(q("Meta"))
     assert meta is not None
     removed_count = meta.get("Removed_Sequences_Shorter_Than_min")
-    # Should have removed the short sequence
-    # (Exact behavior depends on implementation)
+    # Should have removed the short sequence; ensure the meta value exists and is numeric
+    assert removed_count is not None, "Meta attribute 'Removed_Sequences_Shorter_Than_min' missing"
+    try:
+        num_removed = int(removed_count)
+    except Exception as e:
+        pytest.fail(f"Removed_Sequences_Shorter_Than_min is not an integer: {removed_count} ({e})")
+    assert num_removed >= 1, "Expected at least one removed sequence for too-short visibility windows"
 
 
 def test_datetime_rounding_to_nearest_second(tmp_path, monkeypatch):

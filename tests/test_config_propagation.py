@@ -120,6 +120,10 @@ class TestConfigParameterPropagation:
             )
         except Exception as e:
             pytest.fail(f"generate_science_calendar raised an unexpected exception: {e}")
+
+        # The builder should return the destination path and write the file
+        assert output is not None, "generate_science_calendar did not return an output path"
+        assert Path(output).exists(), f"Expected calendar file to be created at {output}"
         
         # Verify config has the right parameters
         assert config.visit_limit == 50

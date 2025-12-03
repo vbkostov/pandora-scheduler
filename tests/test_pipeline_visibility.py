@@ -49,9 +49,6 @@ def test_maybe_generate_visibility_invokes_builder(monkeypatch, tmp_path):
     monitoring_target_csv = (paths.data_dir / "monitoring-standard_targets.csv").resolve()
     occultation_target_csv = (paths.data_dir / "occultation-standard_targets.csv").resolve()
 
-    expected_gmat = gmat.resolve()
-
-
     # Re-instantiate with explicit flag for this test since we want to test the flag logic
     # Also provide the temporary GMAT via extra_inputs so the visibility builder can be configured
     config = PandoraSchedulerConfig(
