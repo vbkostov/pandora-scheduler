@@ -85,14 +85,20 @@ def interpolate_gmat_ephemeris(
 
     gmat_mjd_utc = gmat_df[time_column].to_numpy(dtype=float) + 2430000.0 - 2400000.5
 
-    earth_ec = _interp_vectors(cadence.mjd_utc, gmat_mjd_utc, _extract_vectors(gmat_df, "Earth"))
+    earth_ec = _interp_vectors(
+        cadence.mjd_utc, gmat_mjd_utc, _extract_vectors(gmat_df, "Earth")
+    )
     spacecraft_ec = _interp_vectors(
         cadence.mjd_utc,
         gmat_mjd_utc,
         _extract_vectors(gmat_df, spacecraft),
     )
-    sun_ec = _interp_vectors(cadence.mjd_utc, gmat_mjd_utc, _extract_vectors(gmat_df, "Sun"))
-    moon_ec = _interp_vectors(cadence.mjd_utc, gmat_mjd_utc, _extract_vectors(gmat_df, "Luna"))
+    sun_ec = _interp_vectors(
+        cadence.mjd_utc, gmat_mjd_utc, _extract_vectors(gmat_df, "Sun")
+    )
+    moon_ec = _interp_vectors(
+        cadence.mjd_utc, gmat_mjd_utc, _extract_vectors(gmat_df, "Luna")
+    )
 
     lat_series = gmat_df[f"{spacecraft}.Earth.Latitude"].to_numpy(dtype=float)
     lon_series = gmat_df[f"{spacecraft}.Earth.Longitude"].to_numpy(dtype=float)

@@ -19,7 +19,7 @@ def regenerate_calendar(output_dir_str: str):
         sys.exit(1)
 
     logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("regenerate")
+    # logger variable not needed here; keep logging configured via basicConfig
 
     inputs = science_calendar.ScienceCalendarInputs(
         schedule_csv=schedule_csv,

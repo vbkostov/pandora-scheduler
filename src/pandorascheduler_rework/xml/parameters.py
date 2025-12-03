@@ -12,9 +12,7 @@ _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 
 
 def populate_nirda_parameters(
-    payload_parameters: ET.Element, 
-    targ_info: pd.DataFrame, 
-    diff_in_seconds: float
+    payload_parameters: ET.Element, targ_info: pd.DataFrame, diff_in_seconds: float
 ) -> None:
     """Populate NIRDA parameters in the XML payload."""
     if targ_info.empty:
@@ -43,7 +41,9 @@ def populate_nirda_parameters(
             continue
 
         if column_name not in columns_to_ignore:
-            ET.SubElement(nirda_element, column_name.replace("NIRDA_", "")).text = str(nirda_value)
+            ET.SubElement(nirda_element, column_name.replace("NIRDA_", "")).text = str(
+                nirda_value
+            )
             continue
 
         if column_name == "NIRDA_TargetID":
@@ -60,9 +60,7 @@ def populate_nirda_parameters(
 
 
 def populate_vda_parameters(
-    payload_parameters: ET.Element, 
-    targ_info: pd.DataFrame, 
-    diff_in_seconds: float
+    payload_parameters: ET.Element, targ_info: pd.DataFrame, diff_in_seconds: float
 ) -> None:
     """Populate VDA parameters in the XML payload."""
     if targ_info.empty:
@@ -110,12 +108,18 @@ def populate_vda_parameters(
             continue
 
         if column_name == "VDA_TargetDEC":
-            ET.SubElement(vda_element, "TargetDEC").text = str(row.get("DEC", vda_value))
+            ET.SubElement(vda_element, "TargetDEC").text = str(
+                row.get("DEC", vda_value)
+            )
             continue
 
         if column_name == "VDA_StarRoiDetMethod":
             value = row.at[column_name]
-            fallback = row.get("StarRoiDetMethod") if isinstance(value, str) and value in _PLACEHOLDER_MARKERS else value
+            fallback = (
+                row.get("StarRoiDetMethod")
+                if isinstance(value, str) and value in _PLACEHOLDER_MARKERS
+                else value
+            )
 
             if fallback is None:
                 continue
@@ -182,10 +186,18 @@ def populate_vda_parameters(
         if column_name == "VDA_NumTotalFramesRequested":
             exposure_time_us = row.get("VDA_ExposureTime_us")
             frames_per_coadd = row.get("VDA_FramesPerCoadd")
-            if pd.notna(exposure_time_us) and pd.notna(frames_per_coadd) and frames_per_coadd:
+            if (
+                pd.notna(exposure_time_us)
+                and pd.notna(frames_per_coadd)
+                and frames_per_coadd
+            ):
                 exposure_seconds = 1e-6 * float(exposure_time_us)
                 if exposure_seconds > 0:
                     coadd = int(frames_per_coadd)
-                    frames = int(np.floor(diff_in_seconds / exposure_seconds / coadd) * coadd)
-                    ET.SubElement(vda_element, "NumTotalFramesRequested").text = str(max(frames, 0))
+                    frames = int(
+                        np.floor(diff_in_seconds / exposure_seconds / coadd) * coadd
+                    )
+                    ET.SubElement(vda_element, "NumTotalFramesRequested").text = str(
+                        max(frames, 0)
+                    )
             continue

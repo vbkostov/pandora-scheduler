@@ -94,11 +94,13 @@ def schedule_occultation_targets(
     if "Visibility" not in o_df.columns:
         o_df["Visibility"] = np.nan
 
-    description = (
-        f"{visit_start} to {visit_stop}: Searching for occultation target from {try_occ_targets}"
-        if visit_start is not None and visit_stop is not None
-        else f"Searching for occultation target from {try_occ_targets}"
-    )
+    if visit_start is not None and visit_stop is not None:
+        description = (
+            "%s to %s: Searching for occultation target from %s"
+            % (visit_start, visit_stop, try_occ_targets)
+        )
+    else:
+        description = "Searching for occultation target from %s" % (try_occ_targets,)
 
     base_path = Path(path) if path is not None else None
 
@@ -111,12 +113,12 @@ def schedule_occultation_targets(
     def _get_visibility(name: str) -> Optional[tuple[np.ndarray, np.ndarray]]:
         if name in visibility_cache:
             return visibility_cache[name]
-        
+
         f_path = _resolve_visibility_file(name, base_path)
         if f_path is None:
             LOGGER.debug("Skipping %s; visibility file not found", name)
             return None
-            
+
         data = _load_visibility_data(f_path)
         visibility_cache[name] = data
         return data
@@ -126,9 +128,9 @@ def schedule_occultation_targets(
         vis_data = _get_visibility(v_name)
         if vis_data is None:
             continue
-            
+
         vis_times, visibility = vis_data
-        
+
         # Check if visible for ALL intervals individually (less strict)
         all_visible = True
         for start, stop in zip(starts_array, stops_array):
@@ -136,14 +138,14 @@ def schedule_occultation_targets(
             if not np.all(visibility[interval_mask] == 1):
                 all_visible = False
                 break
-        
+
         if not all_visible:
             continue
         # Apply this target to all intervals
         for idx, start in enumerate(starts_array):
             schedule.loc[start, "Target"] = v_name
             schedule.loc[start, "Visibility"] = 1
-            
+
             match = o_list.loc[o_list["Star Name"] == v_name]
             if not match.empty:
                 match_row = match.iloc[0]
@@ -151,7 +153,7 @@ def schedule_occultation_targets(
                 o_df.loc[idx, "RA"] = match_row["RA"]
                 o_df.loc[idx, "DEC"] = match_row["DEC"]
                 o_df.loc[idx, "Visibility"] = 1
-        
+
         return o_df, True
 
     # PASS 2: Fill gaps with multiple targets (Greedy approach)
@@ -163,7 +165,7 @@ def schedule_occultation_targets(
         vis_data = _get_visibility(v_name)
         if vis_data is None:
             continue
-            
+
         vis_times, visibility = vis_data
 
         for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
@@ -209,7 +211,9 @@ def schedule_occultation_targets(
             interval_mask = (vis_times >= start) & (vis_times <= stop)
             if interval_mask.sum() == 0:
                 continue
-            coverage_fraction = float((visibility[interval_mask] == 1).sum()) / float(interval_mask.sum())
+            coverage_fraction = float((visibility[interval_mask] == 1).sum()) / float(
+                interval_mask.sum()
+            )
             if coverage_fraction > best_coverage:
                 best_coverage = coverage_fraction
                 best_name = v_name
@@ -262,7 +266,9 @@ def schedule_occultation_targets(
                 continue
             vis_min_idx = np.round(vis_times * minute_scale).astype(int)
             visible_min_idx = set(vis_min_idx[vis_flags == 1])
-            candidate_coverages[v_name] = np.isin(minutes_idx, np.fromiter(visible_min_idx, dtype=int))
+            candidate_coverages[v_name] = np.isin(
+                minutes_idx, np.fromiter(visible_min_idx, dtype=int)
+            )
 
         i = 0
         while i < minutes_idx.size:
@@ -308,8 +314,16 @@ def schedule_occultation_targets(
                 stop_str = str(run_end_mjd)
 
             match = o_list.loc[o_list["Star Name"] == best_name]
-            ra_val = match.iloc[0]["RA"] if not match.empty and "RA" in match.columns else float("nan")
-            dec_val = match.iloc[0]["DEC"] if not match.empty and "DEC" in match.columns else float("nan")
+            ra_val = (
+                match.iloc[0]["RA"]
+                if not match.empty and "RA" in match.columns
+                else float("nan")
+            )
+            dec_val = (
+                match.iloc[0]["DEC"]
+                if not match.empty and "DEC" in match.columns
+                else float("nan")
+            )
 
             result_rows.append(
                 {
@@ -427,9 +441,7 @@ def check_if_transits_in_obs_window(
             continue
 
         planet_data = planet_data.drop(
-            planet_data.index[
-                planet_data["Transit_Coverage"] < transit_coverage_min
-            ]
+            planet_data.index[planet_data["Transit_Coverage"] < transit_coverage_min]
         ).reset_index(drop=True)
         if planet_data.empty:
             continue
@@ -467,8 +479,6 @@ def check_if_transits_in_obs_window(
         early_start = stop_series - timedelta(hours=20)
         late_start = start_series - timedelta(hours=4)
 
-        start_rng = pd.date_range(early_start.iloc[0], late_start.iloc[0], freq="min")
-
         try:
             ra_tar = float(row["RA"])
             dec_tar = float(row["DEC"])
@@ -480,7 +490,9 @@ def check_if_transits_in_obs_window(
         if transits_needed == 0:
             continue
 
-        coverage_values = planet_data["Transit_Coverage"].to_numpy(dtype=float, copy=False)
+        coverage_values = planet_data["Transit_Coverage"].to_numpy(
+            dtype=float, copy=False
+        )
         saa_values = planet_data["SAA_Overlap"].to_numpy(dtype=float, copy=False)
 
         for j, (window_start, window_stop) in enumerate(zip(early_start, late_start)):
@@ -571,7 +583,9 @@ def process_target_files(keyword: str, *, base_path: Path | None = None):
         ``comparison_outputs/target_definition_files_limited``.
     """
 
-    base_dir = Path(base_path) if base_path is not None else _default_target_definition_base()
+    base_dir = (
+        Path(base_path) if base_path is not None else _default_target_definition_base()
+    )
     return build_target_manifest(keyword, base_dir)
 
 
@@ -609,10 +623,14 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
     if not common_columns:
         raise ValueError("Target lists share no common columns; cannot build aux list")
 
-    primary_column_order = [col for col in dataframes[0].columns if col in common_columns]
+    primary_column_order = [
+        col for col in dataframes[0].columns if col in common_columns
+    ]
 
     trimmed = [frame.loc[:, primary_column_order] for frame in dataframes]
-    combined = pd.concat(trimmed, ignore_index=True).drop_duplicates().reset_index(drop=True)
+    combined = (
+        pd.concat(trimmed, ignore_index=True).drop_duplicates().reset_index(drop=True)
+    )
 
     output_path = data_dir / "aux_list_new.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -633,17 +651,17 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
 @functools.lru_cache(maxsize=32)
 def _load_visibility_data(file_path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Load and cache visibility data from CSV file.
-    
+
     This function is cached to avoid repeatedly reading the same file
     when scheduling multiple observation windows for the same target.
     Cache size is limited to 32 files (~256 MB memory) to balance
     performance with memory usage.
-    
+
     Parameters
     ----------
     file_path
         Path to the visibility CSV file.
-        
+
     Returns
     -------
     tuple[np.ndarray, np.ndarray]
@@ -675,9 +693,7 @@ def _resolve_visibility_file(target_name: str, base_path: Path | None) -> Path |
 
 def _planet_visibility_file(star_name: str, planet_name: str) -> Path | None:
     for data_root in DATA_ROOTS:
-        candidate = build_visibility_path(
-            data_root / "targets", star_name, planet_name
-        )
+        candidate = build_visibility_path(data_root / "targets", star_name, planet_name)
         if candidate.is_file():
             return candidate
     return None

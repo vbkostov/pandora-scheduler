@@ -10,14 +10,15 @@ import pandas as pd
 import pytest
 from erfa import ErfaWarning
 
+# Import the rework manifest builder (place imports at top to satisfy linters)
+from pandorascheduler_rework.targets.manifest import build_target_manifest
+
 
 warnings.filterwarnings("ignore", category=ErfaWarning)
 
 pytestmark = pytest.mark.filterwarnings(
     r"ignore:ERFA function .*:erfa.ErfaWarning"
 )
-
-from pandorascheduler_rework.targets.manifest import build_target_manifest
 
 
 def _find_target_definition_dir() -> Path:

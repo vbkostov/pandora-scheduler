@@ -12,7 +12,10 @@ from astropy.time import Time
 
 from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.string_ops import remove_suffix
-from pandorascheduler_rework.utils.array_ops import remove_short_sequences, break_long_sequences
+from pandorascheduler_rework.utils.array_ops import (
+    remove_short_sequences,
+    break_long_sequences,
+)
 from pandorascheduler_rework.xml import observation_sequence
 
 
@@ -110,7 +113,9 @@ def test_observation_sequence_emits_expected_xml():
     assert vda.find("TargetDEC").text == str(targ_info.loc[0, "DEC"])
 
 
-def test_schedule_occultation_targets_selects_visible_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_schedule_occultation_targets_selects_visible_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     start_mjd = np.array([60000.0])
     stop_mjd = np.array([60000.0625])
 
@@ -169,11 +174,14 @@ def test_save_observation_time_report_writes_csv(tmp_path: Path):
     assert "Aux,No,1.00" in content[1:]
 
 
-def test_schedule_occultation_targets_handles_zero_duration_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_schedule_occultation_targets_handles_zero_duration_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Test that zero-duration windows (start==stop) are handled correctly.
     
-    Legacy behavior: np.all([]) returns True, so empty windows accept the first candidate.
-    This test ensures we match that behavior to avoid regression.
+    Legacy behavior: np.all([]) returns True, so empty windows accept the
+    first candidate. This test ensures we match that behavior to avoid
+    regression.
     """
     # Zero-duration window: start and stop at the same time
     start_mjd = np.array([60000.0])
@@ -221,14 +229,19 @@ def test_schedule_occultation_targets_handles_zero_duration_window(tmp_path: Pat
     assert updated.loc[0, "Visibility"] == 1
 
 
-def test_schedule_occultation_targets_fills_multiple_windows_with_one_unfilled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_schedule_occultation_targets_fills_multiple_windows_with_one_unfilled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Test that if 27 out of 28 windows are filled, the function returns False.
     
     This ensures we match legacy behavior where ALL windows must be filled for success.
     """
     # Create 28 windows - 27 normal, 1 zero-duration
     starts = [60000.0 + i * 0.03 for i in range(27)] + [60001.0]
-    stops = [60000.0 + i * 0.03 + 0.02 for i in range(27)] + [60001.0]  # Last one is zero-duration
+    stops = [
+        60000.0 + i * 0.03 + 0.02
+        for i in range(27)
+    ] + [60001.0]  # Last one is zero-duration
     starts_mjd = np.array(starts)
     stops_mjd = np.array(stops)
 
@@ -277,7 +290,9 @@ def test_schedule_occultation_targets_fills_multiple_windows_with_one_unfilled(t
     assert filled_count == 28
 
 
-def test_check_if_transits_in_obs_window_matches_basic_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_check_if_transits_in_obs_window_matches_basic_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     star_dir = tmp_path / "targets" / "WASP-107" / "WASP-107 b"
     star_dir.mkdir(parents=True)
     start = datetime(2025, 5, 1, 0, 0, 0)
@@ -360,7 +375,9 @@ def test_check_if_transits_in_obs_window_matches_basic_case(tmp_path: Path, monk
     assert tracker.loc[0, "Transits Left in Schedule"] == 1
 
 
-def test_no_transits_in_observation_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_no_transits_in_observation_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Test check_if_transits_in_obs_window with no transits in the window."""
     star_dir = tmp_path / "targets" / "NoTransit" / "NoTransit b"
     star_dir.mkdir(parents=True)
@@ -432,7 +449,9 @@ def test_no_transits_in_observation_window(tmp_path: Path, monkeypatch: pytest.M
     assert result.empty
 
 
-def test_partial_transit_coverage_calculation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_partial_transit_coverage_calculation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Test transit coverage when transit is partially within observation window."""
     star_dir = tmp_path / "targets" / "PartialStar" / "PartialPlanet"
     star_dir.mkdir(parents=True)
@@ -500,10 +519,16 @@ def test_partial_transit_coverage_calculation(tmp_path: Path, monkeypatch: pytes
     
     # Should find the partial transit
     assert not result.empty, "Expected to find partial transit"
-    assert result.iloc[0]["Transit Coverage"] == 0.5, f"Expected 0.5 coverage, got {result.iloc[0]['Transit Coverage']}"
+    expected_msg = (
+        "Expected 0.5 coverage, got "
+        f"{result.iloc[0]['Transit Coverage']}"
+    )
+    assert result.iloc[0]["Transit Coverage"] == 0.5, expected_msg
 
 
-def test_occultation_target_prioritization_by_slew(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_occultation_target_prioritization_by_slew(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Test that occultation targets are prioritized by slew distance when enabled."""
     # Create three occultation candidates at different angular distances
     vis_dir_close = tmp_path / "aux_targets" / "CloseTarget"

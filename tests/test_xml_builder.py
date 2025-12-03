@@ -133,8 +133,15 @@ def test_generate_science_calendar_with_occultation(tmp_path, monkeypatch):
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}", 1)[0].strip("{")
-    q = lambda tag: f"{{{ns}}}{tag}" if ns else tag
-    targets = [t.text for t in root.findall(f'.//{q("Observation_Sequence")}/{q("Observational_Parameters")}/{q("Target")}') if t is not None]
+    def q(tag: str) -> str:
+        return f"{{{ns}}}{tag}" if ns else tag
+    targets = [
+        t.text
+        for t in root.findall(
+            f'.//{q("Observation_Sequence")}/{q("Observational_Parameters")}/{q("Target")}'
+        )
+        if t is not None
+    ]
     assert "StarOne b" in targets
     assert "OccStar" in targets
 
@@ -238,8 +245,15 @@ def test_generate_science_calendar_splits_long_occultations(tmp_path, monkeypatc
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}", 1)[0].strip("{")
-    q = lambda tag: f"{{{ns}}}{tag}" if ns else tag
-    targets = [t.text for t in root.findall(f'.//{q("Observation_Sequence")}/{q("Observational_Parameters")}/{q("Target")}') if t is not None]
+    def q(tag: str) -> str:
+        return f"{{{ns}}}{tag}" if ns else tag
+    targets = [
+        t.text
+        for t in root.findall(
+            f'.//{q("Observation_Sequence")}/{q("Observational_Parameters")}/{q("Target")}'
+        )
+        if t is not None
+    ]
     assert "StarTwo b" in targets
     # Accept either OccA or OccB (scheduling may prioritise one target over the other)
     assert any(name in {"OccA", "OccB"} for name in targets)
@@ -509,8 +523,9 @@ def test_calendar_sequences_below_minimum(tmp_path, monkeypatch):
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}", 1)[0].strip("{")
-    q = lambda tag: f"{{{ns}}}{tag}" if ns else tag
-    
+    def q(tag: str) -> str:
+        return f"{{{ns}}}{tag}" if ns else tag
+
     meta = root.find(q("Meta"))
     assert meta is not None
     removed_count = meta.get("Removed_Sequences_Shorter_Than_min")

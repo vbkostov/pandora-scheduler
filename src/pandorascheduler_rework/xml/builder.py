@@ -23,7 +23,7 @@ def observation_sequence(
     targ_info: pd.DataFrame,
 ):
     """Create an Observation_Sequence XML element.
-    
+
     Args:
         visit: Parent XML element
         obs_seq_id: Sequence ID string
@@ -34,7 +34,7 @@ def observation_sequence(
         ra: Right Ascension
         dec: Declination
         targ_info: DataFrame containing target parameters (NIRDA/VDA)
-        
+
     Returns:
         The created sequence Element
     """
@@ -66,6 +66,7 @@ def observation_sequence(
 
 def _build_observational_parameters(target_name, priority, start, stop, ra, dec):
     """Build dictionary of observational parameters."""
+
     def _to_datetime(val):
         if isinstance(val, datetime):
             return val
@@ -104,6 +105,7 @@ def _build_observational_parameters(target_name, priority, start, stop, ra, dec)
 
 def _duration_in_seconds(start, stop) -> float:
     """Calculate duration in seconds between start and stop times."""
+
     def _to_datetime(val):
         if isinstance(val, datetime):
             return val

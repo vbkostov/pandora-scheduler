@@ -31,7 +31,11 @@ _EXOPLANET_CATEGORIES = {
     "primary-exoplanet",
     "secondary-exoplanet",
 }
-_STANDARD_CATEGORIES = {"auxiliary-standard", "monitoring-standard", "occultation-standard"}
+_STANDARD_CATEGORIES = {
+    "auxiliary-standard",
+    "monitoring-standard",
+    "occultation-standard",
+}
 _OCCULTATION_CATEGORY = "occultation-standard"
 _DEFAULT_OBSERVATION_EPOCH = Time("2026-01-05")
 
@@ -74,7 +78,7 @@ def build_target_manifest(
     category_dir = base_dir / category
     if not category_dir.is_dir():
         raise TargetDefinitionError(
-            f"Target definition directory not found: {category_dir}"\
+            f"Target definition directory not found: {category_dir}"
         )
 
     if isinstance(observation_epoch, str):
@@ -86,9 +90,7 @@ def build_target_manifest(
     rows: List[MutableMapping[str, object]] = []
     for json_path in sorted(category_dir.glob("*_target_definition.json")):
         row = _load_target_definition(json_path)
-        row["Original Filename"] = json_path.name.replace(
-            "_target_definition.json", ""
-        )
+        row["Original Filename"] = json_path.name.replace("_target_definition.json", "")
 
         _apply_priority(row, category, priority_table)
         _apply_identity_columns(row, category)
@@ -99,17 +101,19 @@ def build_target_manifest(
 
     if not rows:
         raise TargetDefinitionError(
-            f"No target definition JSON files found in {category_dir}"\
+            f"No target definition JSON files found in {category_dir}"
         )
 
     manifest = pd.DataFrame(rows)
     manifest = _normalise_manifest_columns(manifest, category)
     manifest = _standardise_dtypes(manifest)
-    
+
     # Sort all target categories by priority (descending) to match Legacy behavior
     if "Priority" in manifest.columns:
-        manifest = manifest.sort_values(by="Priority", ascending=False).reset_index(drop=True)
-    
+        manifest = manifest.sort_values(by="Priority", ascending=False).reset_index(
+            drop=True
+        )
+
     return manifest
 
 
@@ -148,7 +152,9 @@ def _flatten_dict(
 
 
 def _load_readout_schemes(base_dir: Path) -> _ReadoutSchemes:
-    def load_file(filename: str) -> Tuple[Mapping[str, object], Mapping[str, Mapping[str, object]]]:
+    def load_file(
+        filename: str,
+    ) -> Tuple[Mapping[str, object], Mapping[str, Mapping[str, object]]]:
         path = base_dir / filename
         if not path.is_file():
             raise TargetDefinitionError(f"Readout scheme file missing: {path}")
@@ -167,9 +173,7 @@ def _load_readout_schemes(base_dir: Path) -> _ReadoutSchemes:
     return _ReadoutSchemes(nirda_fixed, nirda_schemes, vda_fixed, vda_schemes)
 
 
-def _load_priority_table(
-    category_dir: Path, category: str
-) -> pd.DataFrame | None:
+def _load_priority_table(category_dir: Path, category: str) -> pd.DataFrame | None:
     priority_path = category_dir / f"{category}_priorities.csv"
     if not priority_path.is_file():
         # raise an error here. we need these files
@@ -177,9 +181,7 @@ def _load_priority_table(
 
     metadata, table = _read_priority_csv(priority_path)
     if table.empty:
-        raise TargetDefinitionError(
-            f"Priority table {priority_path} contained no rows"
-        )
+        raise TargetDefinitionError(f"Priority table {priority_path} contained no rows")
     return table
 
 
@@ -256,9 +258,9 @@ def _apply_identity_columns(row: MutableMapping[str, object], category: str) -> 
             row["Planet Simbad Name"] = planet_name_raw
         row["Star Simbad Name"] = star_name
         if "Transit Epoch (BJD_TDB)" in row:
-            row[
-                "Transit Epoch (BJD_TDB-2400000.5)"
-            ] = float(row["Transit Epoch (BJD_TDB)"]) - 2400000.5
+            row["Transit Epoch (BJD_TDB-2400000.5)"] = (
+                float(row["Transit Epoch (BJD_TDB)"]) - 2400000.5
+            )
     elif category == "auxiliary-standard":
         row["Planet Name"] = ""
         row["Planet Simbad Name"] = ""
@@ -332,9 +334,7 @@ def _normalise_manifest_columns(df: pd.DataFrame, category: str) -> pd.DataFrame
     if category in _STANDARD_CATEGORIES or category == _OCCULTATION_CATEGORY:
         columns_order = [col for col in ("Star Name", "Star Simbad Name") if col in df]
         remaining = [
-            col
-            for col in df.columns
-            if col not in columns_order and col != "Priority"
+            col for col in df.columns if col not in columns_order and col != "Priority"
         ]
         columns_order.extend(remaining)
         if "Priority" in df.columns:
@@ -353,9 +353,7 @@ def _normalise_manifest_columns(df: pd.DataFrame, category: str) -> pd.DataFrame
         extra_optional = "Transit Epoch (BJD_TDB-2400000.5)"
         if extra_optional in df.columns and extra_optional not in columns_order:
             columns_order.append(extra_optional)
-        columns_order.extend(
-            [col for col in df.columns if col not in columns_order]
-        )
+        columns_order.extend([col for col in df.columns if col not in columns_order])
 
     nirda_vda_columns = [
         col

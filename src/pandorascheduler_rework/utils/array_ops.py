@@ -9,15 +9,14 @@ import numpy as np
 
 
 def remove_short_sequences(
-    array: np.ndarray, 
-    sequence_too_short: int
+    array: np.ndarray, sequence_too_short: int
 ) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
     """Remove visibility sequences shorter than threshold.
-    
+
     Args:
         array: Binary visibility array (1=visible, 0=not visible)
         sequence_too_short: Minimum sequence length to keep
-        
+
     Returns:
         Tuple of (cleaned array, list of removed spans)
     """
@@ -44,17 +43,15 @@ def remove_short_sequences(
 
 
 def break_long_sequences(
-    start: datetime, 
-    end: datetime, 
-    step: timedelta
+    start: datetime, end: datetime, step: timedelta
 ) -> List[Tuple[datetime, datetime]]:
     """Break long time range into smaller chunks.
-    
+
     Args:
         start: Start time
         end: End time
         step: Maximum chunk duration
-        
+
     Returns:
         List of (start, end) tuples for each chunk
     """

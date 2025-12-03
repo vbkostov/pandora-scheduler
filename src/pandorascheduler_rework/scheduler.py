@@ -17,12 +17,10 @@ from tqdm import tqdm
 from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.utils.string_ops import remove_suffix
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-
-from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 
 @dataclass(frozen=True)
@@ -89,7 +87,9 @@ class SchedulerOutputs:
     tracker_pickle_path: Optional[Path]
 
 
-def run_scheduler(inputs: SchedulerInputs, config: PandoraSchedulerConfig) -> SchedulerOutputs:
+def run_scheduler(
+    inputs: SchedulerInputs, config: PandoraSchedulerConfig
+) -> SchedulerOutputs:
     """Execute the scheduling loop to mirror the legacy Schedule function."""
 
     commissioning_offset = timedelta(days=config.commissioning_days)
@@ -309,9 +309,7 @@ def _initialize_tracker(
             "Primary Target": target_list["Primary Target"].to_numpy(),
             "RA": target_list["RA"].to_numpy(),
             "DEC": target_list["DEC"].to_numpy(),
-            "Transits Needed": target_list[
-                "Number of Transits to Capture"
-            ].to_numpy(),
+            "Transits Needed": target_list["Number of Transits to Capture"].to_numpy(),
         }
     )
     tracker["Transits Acquired"] = np.zeros(len(target_list), dtype=float)
@@ -346,7 +344,8 @@ def _initialize_tracker(
 
         if planet_data is None:
             raise FileNotFoundError(
-                f"Visibility file missing or unreadable for planet {planet_name} (expected at {visibility_path})"
+                "Visibility file missing or unreadable for planet %s (expected at %s)"
+                % (planet_name, visibility_path)
             )
 
         planet_data = planet_data.drop(
@@ -364,31 +363,47 @@ def _initialize_tracker(
         # Use pre-converted datetime if available (performance optimization)
         if "Transit_Start_UTC" in planet_data.columns:
             try:
-                start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"]).to_numpy()
+                start_transits = pd.to_datetime(
+                    planet_data["Transit_Start_UTC"]
+                ).to_numpy()
             except Exception as e:
-                raise ValueError(f"Failed to parse Transit_Start_UTC for {planet_name}: {e}")
+                raise ValueError(
+                    f"Failed to parse Transit_Start_UTC for {planet_name}: {e}"
+                )
         else:
             # Fallback to MJD conversion for backward compatibility
             try:
-                start_transits = pd.to_datetime(Time(
-                    planet_data["Transit_Start"], format="mjd", scale="utc"
-                ).to_datetime()).to_numpy()
+                start_transits = pd.to_datetime(
+                    Time(
+                        planet_data["Transit_Start"], format="mjd", scale="utc"
+                    ).to_datetime()
+                ).to_numpy()
             except Exception as e:
-                raise ValueError(f"Failed to convert Transit_Start MJD for {planet_name}: {e}")
-        
+                raise ValueError(
+                    f"Failed to convert Transit_Start MJD for {planet_name}: {e}"
+                )
+
         if "Transit_Stop_UTC" in planet_data.columns:
             try:
-                end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"]).to_numpy()
+                end_transits = pd.to_datetime(
+                    planet_data["Transit_Stop_UTC"]
+                ).to_numpy()
             except Exception as e:
-                raise ValueError(f"Failed to parse Transit_Stop_UTC for {planet_name}: {e}")
+                raise ValueError(
+                    f"Failed to parse Transit_Stop_UTC for {planet_name}: {e}"
+                )
         else:
             # Fallback to MJD conversion for backward compatibility
             try:
-                end_transits = pd.to_datetime(Time(
-                    planet_data["Transit_Stop"], format="mjd", scale="utc"
-                ).to_datetime()).to_numpy()
+                end_transits = pd.to_datetime(
+                    Time(
+                        planet_data["Transit_Stop"], format="mjd", scale="utc"
+                    ).to_datetime()
+                ).to_numpy()
             except Exception as e:
-                raise ValueError(f"Failed to convert Transit_Stop MJD for {planet_name}: {e}")
+                raise ValueError(
+                    f"Failed to convert Transit_Stop MJD for {planet_name}: {e}"
+                )
 
         # Ensure pandora_start/stop are compatible with numpy datetime64 arrays
         p_start = pd.to_datetime(pandora_start).to_numpy()
@@ -396,9 +411,7 @@ def _initialize_tracker(
         s_start = pd.to_datetime(sched_start).to_numpy()
         s_stop = pd.to_datetime(sched_stop).to_numpy()
 
-        lifetime_mask = (p_start <= start_transits) & (
-            end_transits <= p_stop
-        )
+        lifetime_mask = (p_start <= start_transits) & (end_transits <= p_stop)
         schedule_mask = (s_start <= start_transits) & (end_transits <= s_stop)
 
         transits_left_lifetime.append(int(np.count_nonzero(lifetime_mask)))
@@ -445,10 +458,13 @@ def _persist_outputs(
     tracker_csv_path = inputs.output_dir / "tracker.csv"
     tracker.to_csv(tracker_csv_path, index=False)
 
-    tracker_pickle_path = inputs.tracker_pickle_path or (
-        inputs.output_dir
-        / f"Tracker_{pandora_start.strftime('%Y-%m-%d')}_to_{pandora_stop.strftime('%Y-%m-%d')}.pkl"
-    )
+    if inputs.tracker_pickle_path:
+        tracker_pickle_path = inputs.tracker_pickle_path
+    else:
+        start_name = pandora_start.strftime("%Y-%m-%d")
+        stop_name = pandora_stop.strftime("%Y-%m-%d")
+        filename = f"Tracker_{start_name}_to_{stop_name}.pkl"
+        tracker_pickle_path = inputs.output_dir / filename
     with tracker_pickle_path.open("wb") as handle:
         pickle.dump(tracker, handle)
 
@@ -480,20 +496,26 @@ def _load_planet_transit_windows(
 ) -> dict[str, tuple[datetime, datetime]]:
     """Batch-load transit windows for multiple planets to avoid repeated CSV reads."""
     transit_windows = {}
-    
+
     for planet_name in planet_names:
         planet_str = str(planet_name)
         star_name = remove_suffix(planet_str)
         try:
             planet_visibility = read_csv_cached(
-                str(observation_utils.build_visibility_path(
-                    inputs.paths.targets_dir, star_name, planet_str
-                ))
+                str(
+                    observation_utils.build_visibility_path(
+                        inputs.paths.targets_dir, star_name, planet_str
+                    )
+                )
             )
         except FileNotFoundError:
             continue
 
-        if planet_visibility is None or planet_visibility.empty or len(planet_visibility) == 0:
+        if (
+            planet_visibility is None
+            or planet_visibility.empty
+            or len(planet_visibility) == 0
+        ):
             continue
 
         start_transit = Time(
@@ -507,7 +529,7 @@ def _load_planet_transit_windows(
         end_transit = end_transit.replace(second=0, microsecond=0)
 
         transit_windows[str(planet_name)] = (start_transit, end_transit)
-    
+
     return transit_windows
 
 
@@ -520,7 +542,7 @@ def _handle_targets_of_opportunity(
     stops: list[datetime],
     state: SchedulerState,
     inputs: SchedulerInputs,
-    config: SchedulerConfig,
+    config: PandoraSchedulerConfig,
     transit_windows: dict[str, tuple[datetime, datetime]],
 ) -> Optional[tuple[pd.DataFrame, datetime]]:
     if not targets:
@@ -613,7 +635,7 @@ def _handle_targets_of_opportunity(
 
     tf_warning_messages: list[str] = []
     active_planets = tracker.loc[positive_needed]
-    
+
     # Reuse the already-loaded transit windows
     for planet_name in active_planets.index:
         if planet_name not in transit_windows:
@@ -674,22 +696,21 @@ def _schedule_auxiliary_target(
     state: SchedulerState,
     inputs: SchedulerInputs,
 ) -> tuple[pd.DataFrame, str]:
-    obs_range = pd.date_range(start, stop, freq="min")
+    # `obs_range` was previously created here but not used; remove to satisfy lint
     active_start = start
     scheduled_rows: list[list] = []
     row_columns = ["Target", "Observation Start", "Observation Stop", "RA", "DEC"]
 
     obs_std_duration = timedelta(hours=config.std_obs_duration_hours)
     if (
-        active_start - state.last_std_obs > timedelta(days=config.std_obs_frequency_days)
+        active_start - state.last_std_obs
+        > timedelta(days=config.std_obs_frequency_days)
         and active_start + obs_std_duration < stop
     ):
         std_path = inputs.paths.data_dir / "monitoring-standard_targets.csv"
         std_df = read_csv_cached(str(std_path))
         if std_df is not None:
-            std_df = std_df.sort_values(
-                "Priority", ascending=False, ignore_index=True
-            )
+            std_df = std_df.sort_values("Priority", ascending=False, ignore_index=True)
             std_records = std_df.to_dict(orient="records")
         else:
             std_records = []
@@ -704,8 +725,7 @@ def _schedule_auxiliary_target(
                 vis = read_csv_cached(str(vis_file))
             except FileNotFoundError:
                 continue
-            
-            
+
             if vis is None or vis.empty or len(vis) == 0:
                 continue
 
@@ -718,7 +738,7 @@ def _schedule_auxiliary_target(
                     vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
                 ).to_datetime()
                 vis_times = pd.to_datetime(vis_times)
-            
+
             mask = (vis_times >= active_start) & (
                 vis_times <= active_start + obs_std_duration
             )
@@ -731,7 +751,9 @@ def _schedule_auxiliary_target(
                     float(std_row["DEC"]),
                     float(std_row["Priority"]),
                 )
-                logger.info(f"{std_name} scheduled for STD observations with full visibility")
+                logger.info(
+                    f"{std_name} scheduled for STD observations with full visibility"
+                )
                 break
 
         if std_candidate is None:
@@ -828,7 +850,7 @@ def _schedule_auxiliary_target(
                 vis = read_csv_cached(str(vis_file))
             except FileNotFoundError:
                 continue
-            
+
             if vis is None or vis.empty or len(vis) == 0:
                 continue
 
@@ -841,7 +863,7 @@ def _schedule_auxiliary_target(
                     vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
                 ).to_datetime()
                 vis_times = pd.to_datetime(vis_times)
-            
+
             mask = (vis_times >= active_start) & (vis_times <= stop)
             vis_filtered = vis.loc[mask]
 
@@ -867,7 +889,12 @@ def _schedule_auxiliary_target(
             )
             scheduled_rows.append([name, active_start, stop, ra_val, dec_val])
             logger.info(
-                f"{name} scheduled for non-primary observations with full visibility from {target_def}"
+                (
+                    "%s scheduled for non-primary observations with "
+                    "full visibility from %s"
+                ),
+                name,
+                target_def,
             )
             selected_row = scheduled_rows[-1]
             priority_baseline = priorities[-1] if priorities else priority_val
@@ -882,10 +909,19 @@ def _schedule_auxiliary_target(
                 ra_val = ras[idx_value]
                 dec_val = decs[idx_value]
                 priority_val = priorities[idx_value]
-                log_info = f"No non-primary target with full visibility; {name} scheduled for non-primary observations with {best_visibility:.2f}% visibility from {target_def}."
+                log_info = (
+                    "No non-primary target with full visibility; "
+                    f"{name} scheduled with {best_visibility:.2f}% visibility"
+                )
                 scheduled_rows.append([name, active_start, stop, ra_val, dec_val])
                 logger.info(
-                    f"No non-primary target with full visibility; {name} scheduled at {best_visibility:.2f}% visibility from {target_def}"
+                    (
+                        "No non-primary target with full visibility; %s "
+                        "scheduled at %.2f%% visibility from %s"
+                    ),
+                    name,
+                    best_visibility,
+                    target_def,
                 )
                 selected_row = scheduled_rows[-1]
                 priority_baseline = priorities[-1] if priorities else priority_val
@@ -923,7 +959,7 @@ def _schedule_auxiliary_target(
         state.all_target_obs_time[target_label] = (
             state.all_target_obs_time.get(target_label, timedelta()) + duration
         )
-    
+
     return result, log_info
 
 
@@ -931,7 +967,7 @@ def _schedule_primary_target(
     temp_df: pd.DataFrame,
     state: SchedulerState,
     inputs: SchedulerInputs,
-    config: SchedulerConfig,
+    config: PandoraSchedulerConfig,
     start: datetime,
     obs_range: pd.DatetimeIndex,
 ) -> pd.DataFrame:
@@ -1016,7 +1052,10 @@ def _schedule_primary_target(
     acquired_value = state.tracker.loc[tracker_mask, "Transits Acquired"].iloc[0]
     acquired = int(cast(float, acquired_value))
     logger.info(
-        f"Scheduled transit {acquired} of {planet_name}. Transit coverage: {trans_cover:.2f}",
+        "Scheduled transit %d of %s. Transit coverage: %.2f",
+        acquired,
+        planet_name,
+        trans_cover,
     )
 
     return pd.concat(dfs, ignore_index=True)

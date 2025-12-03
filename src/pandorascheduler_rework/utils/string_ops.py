@@ -12,18 +12,18 @@ _PLANET_SUFFIX_PATTERN = re.compile(r"\s+[a-z]$", flags=re.ASCII)
 
 def remove_suffix(value: str) -> str:
     """Return value with trailing planet suffix removed.
-    
+
     The legacy helper accepted identifiers like "WASP-107 b" and stripped the
     final " b" so that callers could recover the stellar host name. The rework
     pipeline relies on the same behaviour when looking up per-star visibility
     files.
-    
+
     Args:
         value: Target identifier (e.g., "WASP-107 b")
-        
+
     Returns:
         Identifier with suffix removed (e.g., "WASP-107")
-        
+
     Examples:
         >>> remove_suffix("WASP-107 b")
         "WASP-107"
@@ -35,13 +35,13 @@ def remove_suffix(value: str) -> str:
 
 def target_identifier(row: pd.Series) -> str:
     """Extract target identifier from manifest row.
-    
+
     Prefers Planet Name if present, otherwise uses Star Name.
     Removes trailing single-letter suffix from planet names.
-    
+
     Args:
         row: DataFrame row with target information
-        
+
     Returns:
         Target identifier string
     """

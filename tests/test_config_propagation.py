@@ -6,7 +6,10 @@ from pathlib import Path
 import pandas as pd
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.science_calendar import generate_science_calendar, ScienceCalendarInputs
+from pandorascheduler_rework.science_calendar import (
+    generate_science_calendar,
+    ScienceCalendarInputs,
+)
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
 
 
@@ -116,11 +119,20 @@ class TestConfigParameterPropagation:
                 output_path=tmp_path / "calendar.xml",
             )
         except Exception as e:
-            pytest.fail(f"generate_science_calendar raised an unexpected exception: {e}")
+            # Wrap the failure message to avoid exceeding line length limits
+            msg = (
+                "generate_science_calendar raised an unexpected exception: "
+                f"{e}"
+            )
+            pytest.fail(msg)
 
         # The builder should return the destination path and write the file
-        assert output is not None, "generate_science_calendar did not return an output path"
-        assert Path(output).exists(), f"Expected calendar file to be created at {output}"
+        assert output is not None, (
+            "generate_science_calendar did not return an output path"
+        )
+        assert Path(output).exists(), (
+            "Expected calendar file to be created at " f"{output}"
+        )
         
         # Verify config has the right parameters
         assert config.visit_limit == 50

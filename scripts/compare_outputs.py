@@ -37,10 +37,13 @@ def compare_xml_deep(file1, file2):
 
         # Compare Meta
         meta1 = root1.find("{/pandora/calendar/}Meta")
-        if meta1 is None: meta1 = root1.find("Meta") # Try without namespace if failed
-        
+        if meta1 is None:
+            # Try without namespace if failed
+            meta1 = root1.find("Meta")
+
         meta2 = root2.find("{/pandora/calendar/}Meta")
-        if meta2 is None: meta2 = root2.find("Meta")
+        if meta2 is None:
+            meta2 = root2.find("Meta")
 
         if meta1 is not None and meta2 is not None:
             attr1 = dict(meta1.attrib)
@@ -93,13 +96,15 @@ def compare_xml_deep(file1, file2):
             if id1 != id2:
                 print(f"  MISMATCH at index {i}: ID {id1} vs {id2}")
                 mismatches += 1
-                if mismatches > 10: break
+                if mismatches > 10:
+                    break
                 continue
 
             obs1 = get_child(v1, "Observation_Sequence")
             obs2 = get_child(v2, "Observation_Sequence")
             
-            if obs1 is None and obs2 is None: continue
+            if obs1 is None and obs2 is None:
+                continue
             if (obs1 is None) != (obs2 is None):
                 print(f"  MISMATCH at Visit {id1}: One has ObsSeq, other doesn't.")
                 mismatches += 1

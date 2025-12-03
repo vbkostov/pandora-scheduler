@@ -150,7 +150,7 @@ def compare_xmls(legacy_path, rework_path):
                                 diff_categories['coordinates'].append(
                                     f"Visit {visit_id}, Seq {i}, {key}: Legacy={legacy_val}, Rework={rework_val}, Diff={diff:.6f}"
                                 )
-                        except:
+                        except (TypeError, ValueError):
                             diff_categories['coordinates'].append(
                                 f"Visit {visit_id}, Seq {i}, {key}: Legacy={legacy_val}, Rework={rework_val}"
                             )

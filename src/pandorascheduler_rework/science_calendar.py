@@ -36,6 +36,7 @@ from pandorascheduler_rework.utils.array_ops import (
 )
 from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.xml import observation_sequence
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,9 +47,6 @@ class ScienceCalendarInputs:
 
     schedule_csv: Path
     data_dir: Path
-
-
-from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 
 def generate_science_calendar(
@@ -73,7 +71,9 @@ def generate_science_calendar(
 class _ScienceCalendarBuilder:
     """Encapsulates the translation from CSV schedules to XML."""
 
-    def __init__(self, inputs: ScienceCalendarInputs, config: PandoraSchedulerConfig) -> None:
+    def __init__(
+        self, inputs: ScienceCalendarInputs, config: PandoraSchedulerConfig
+    ) -> None:
         self.inputs = inputs
         self.config = config
         self.schedule = read_csv_cached(str(inputs.schedule_csv))
@@ -86,7 +86,9 @@ class _ScienceCalendarBuilder:
         self.data_dir = inputs.data_dir
         self.target_catalog = _read_catalog(self.data_dir / "exoplanet_targets.csv")
         self.aux_catalog = _read_catalog(self.data_dir / "aux_list_new.csv")
-        self.occ_catalog = _read_catalog(self.data_dir / "occultation-standard_targets.csv")
+        self.occ_catalog = _read_catalog(
+            self.data_dir / "occultation-standard_targets.csv"
+        )
 
         obs_minutes, occ_minutes = observation_utils.general_parameters(
             config.obs_sequence_duration_min,
@@ -116,7 +118,9 @@ class _ScienceCalendarBuilder:
         return root
 
     def _add_meta(self, root: ET.Element) -> None:
-        weights = ", ".join(f"{value:.1f}" for value in self.config.transit_scheduling_weights)
+        weights = ", ".join(
+            f"{value:.1f}" for value in self.config.transit_scheduling_weights
+        )
         keepout = ", ".join(
             f"{value:.1f}"
             for value in (
@@ -135,7 +139,9 @@ class _ScienceCalendarBuilder:
         else:
             timestamp = raw_created or datetime.now()
             # Round to nearest second
-            created_value = str((timestamp + timedelta(microseconds=500_000)).replace(microsecond=0))
+            created_value = str(
+                (timestamp + timedelta(microseconds=500_000)).replace(microsecond=0)
+            )
 
         attrs = {
             "Valid_From": valid_from,
@@ -164,7 +170,7 @@ class _ScienceCalendarBuilder:
             return
 
         target_name, star_name = _normalise_target_name(target_label)
-        
+
         visit_element = ET.SubElement(root, "Visit")
         ET.SubElement(visit_element, "ID").text = f"{'0' * id_padding}{visit_counter}"
 
@@ -177,25 +183,43 @@ class _ScienceCalendarBuilder:
         has_transit = _is_transit_entry(row)
 
         if planet_row is not None and has_transit:
-            visibility_df = _read_visibility(self.data_dir / "targets" / star_name, star_name)
-            transit_df = _read_planet_visibility(self.data_dir / "targets" / star_name / target_name, target_name)
+            visibility_df = _read_visibility(
+                self.data_dir / "targets" / star_name, star_name
+            )
+            transit_df = _read_planet_visibility(
+                self.data_dir / "targets" / star_name / target_name, target_name
+            )
             target_info = planet_row
             transit_windows = _transit_windows(transit_df)
-            transit_start, transit_stop = transit_windows if transit_windows else ([], [])
+            transit_start, transit_stop = (
+                transit_windows if transit_windows else ([], [])
+            )
             priority_flag = True
         else:
-            visibility_df = _read_visibility(self.data_dir / "aux_targets" / star_name, target_name)
+            visibility_df = _read_visibility(
+                self.data_dir / "aux_targets" / star_name, target_name
+            )
             target_info = _lookup_auxiliary_row(self.aux_catalog, target_name)
             transit_start, transit_stop = ([], [])
             priority_flag = False
 
         if visibility_df is None or visibility_df.empty:
-            LOGGER.error("No visibility data for %s. Aborting schedule build.", target_name)
+            LOGGER.error(
+                "No visibility data for %s. Aborting schedule build.", target_name
+            )
             return
 
         try:
-            ra_value = float(target_info.iloc[0]["RA"]) if target_info is not None else float("nan")
-            dec_value = float(target_info.iloc[0]["DEC"]) if target_info is not None else float("nan")
+            ra_value = (
+                float(target_info.iloc[0]["RA"])
+                if target_info is not None
+                else float("nan")
+            )
+            dec_value = (
+                float(target_info.iloc[0]["DEC"])
+                if target_info is not None
+                else float("nan")
+            )
         except (KeyError, ValueError, TypeError, AttributeError):
             ra_value, dec_value = _resolve_coordinates(star_name)
 
@@ -214,7 +238,9 @@ class _ScienceCalendarBuilder:
                     visit_times = [transit_start[0], transit_stop[0]]
                     visibility_flags = [1, 1]
                 except Exception:
-                    LOGGER.warning("No visibility samples within visit for %s", target_name)
+                    LOGGER.warning(
+                        "No visibility samples within visit for %s", target_name
+                    )
                     return
             else:
                 LOGGER.warning("No visibility samples within visit for %s", target_name)
@@ -255,7 +281,10 @@ class _ScienceCalendarBuilder:
         )
         if occultation_info is None:
             LOGGER.warning(
-                f"Unable to schedule occultation target for {target_name} between {start} and {final_time}",
+                "Unable to schedule occultation target for %s between %s and %s",
+                target_name,
+                start,
+                final_time,
             )
             return
 
@@ -313,7 +342,10 @@ class _ScienceCalendarBuilder:
                     )
                     if occ_df is None or oc_index >= len(occ_df):
                         LOGGER.warning(
-                            f"Ran out of occultation targets for {target_name} between {current} and {next_value}",
+                            "Ran out of occultation targets for %s between %s and %s",
+                            target_name,
+                            current,
+                            next_value,
                         )
                         break
 
@@ -324,8 +356,12 @@ class _ScienceCalendarBuilder:
                         self.aux_catalog,
                         self.occ_catalog,
                     )
-                    ra_occ = _fallback_float(occ_df.iloc[oc_index].get("RA"), occ_info, "RA")
-                    dec_occ = _fallback_float(occ_df.iloc[oc_index].get("DEC"), occ_info, "DEC")
+                    ra_occ = _fallback_float(
+                        occ_df.iloc[oc_index].get("RA"), occ_info, "RA"
+                    )
+                    dec_occ = _fallback_float(
+                        occ_df.iloc[oc_index].get("DEC"), occ_info, "DEC"
+                    )
 
                     observation_sequence(
                         visit_element,
@@ -408,9 +444,11 @@ class _ScienceCalendarBuilder:
             expanded_stops = list(stops)
 
         candidates: List[Tuple[Path, str, Path]] = [
-            (self.data_dir / "occultation-standard_targets.csv", "occ list", self.data_dir / "aux_targets"),
-            # (self.data_dir / "exoplanet_targets.csv", "target list", self.data_dir / "targets"),
-            # (self.data_dir / "auxiliary_targets.csv", "aux list", self.data_dir / "aux_targets"),
+            (
+                self.data_dir / "occultation-standard_targets.csv",
+                "occ list",
+                self.data_dir / "aux_targets",
+            ),
         ]
         if not self.config.use_target_list_for_occultations:
             candidates.reverse()
@@ -444,7 +482,15 @@ class _ScienceCalendarBuilder:
                 dec = first_row.get("DEC") if "DEC" in first_row.index else float("nan")
                 rows = []
                 for s, e in zip(expanded_starts, expanded_stops):
-                    rows.append({"Target": target_name, "start": s.strftime("%Y-%m-%dT%H:%M:%SZ"), "stop": e.strftime("%Y-%m-%dT%H:%M:%SZ"), "RA": ra, "DEC": dec})
+                    rows.append(
+                        {
+                            "Target": target_name,
+                            "start": s.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "stop": e.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "RA": ra,
+                            "DEC": dec,
+                        }
+                    )
                 return (pd.DataFrame(rows), True)
         except Exception:
             # If anything goes wrong with the fallback, fall through to None.
@@ -498,7 +544,9 @@ def _is_transit_entry(row: pd.Series) -> bool:
     return np.isfinite(numeric)
 
 
-def _lookup_planet_row(catalog: pd.DataFrame, target_name: str) -> Optional[pd.DataFrame]:
+def _lookup_planet_row(
+    catalog: pd.DataFrame, target_name: str
+) -> Optional[pd.DataFrame]:
     if catalog.empty or "Planet Name" not in catalog.columns:
         return None
     match = catalog.loc[catalog["Planet Name"] == target_name]
@@ -507,13 +555,16 @@ def _lookup_planet_row(catalog: pd.DataFrame, target_name: str) -> Optional[pd.D
     return match.head(1)
 
 
-def _lookup_auxiliary_row(catalog: pd.DataFrame, target_name: str) -> Optional[pd.DataFrame]:
+def _lookup_auxiliary_row(
+    catalog: pd.DataFrame, target_name: str
+) -> Optional[pd.DataFrame]:
     if catalog.empty or "Star Name" not in catalog.columns:
         return None
     match = catalog.loc[catalog["Star Name"] == target_name]
     if match.empty:
         return None
-    # Filter out exoplanet rows (those with a Planet Name) to ensure we get the auxiliary row
+    # Filter out exoplanet rows (those with a Planet Name) so we return
+    # the auxiliary row when both planet and auxiliary entries exist.
     if "Planet Name" in match.columns:
         aux_only = match.loc[match["Planet Name"].isna() | (match["Planet Name"] == "")]
         if not aux_only.empty:
@@ -536,11 +587,15 @@ def _lookup_occultation_info(
         if not planet_match.empty:
             return planet_match.head(1)
 
-    aux_match = aux_catalog.loc[aux_catalog.get("Star Name", pd.Series(dtype=object)) == target_name]
+    aux_match = aux_catalog.loc[
+        aux_catalog.get("Star Name", pd.Series(dtype=object)) == target_name
+    ]
     if not aux_match.empty:
         return aux_match.head(1)
 
-    occ_match = occ_catalog.loc[occ_catalog.get("Star Name", pd.Series(dtype=object)) == target_name]
+    occ_match = occ_catalog.loc[
+        occ_catalog.get("Star Name", pd.Series(dtype=object)) == target_name
+    ]
     if not occ_match.empty:
         return occ_match.head(1)
 
@@ -593,7 +648,10 @@ def _extract_visibility_segment(
     window_indices = [idx for idx, include in enumerate(mask) if include]
     filtered_times = [raw_times[idx] for idx in window_indices]
     # Round each time to nearest second
-    visit_times = [(t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in filtered_times]
+    visit_times = [
+        (t + timedelta(microseconds=500_000)).replace(microsecond=0)
+        for t in filtered_times
+    ]
 
     flags = [float(visibility_df.iloc[idx]["Visible"]) for idx in window_indices]
     filtered_flags, _ = remove_short_sequences(
@@ -714,7 +772,9 @@ def _build_occultation_schedule(
         ]
         for start, stop in zip(starts, stops)
     ]
-    occ_df = pd.DataFrame(schedule_rows, columns=["Target", "start", "stop", "RA", "DEC"])
+    occ_df = pd.DataFrame(
+        schedule_rows, columns=["Target", "start", "stop", "RA", "DEC"]
+    )
 
     try:
         occ_list = read_csv_cached(str(list_path))
@@ -764,9 +824,16 @@ def _transit_windows(
         scale="utc",
     ).to_datetime()
 
-    # Round each time to nearest second (matching legacy round_to_nearest_second behavior)
-    start = [(t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in start_times]
-    stop = [(t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in stop_times]
+    # Round each time to nearest second to match legacy
+    # `round_to_nearest_second` behaviour.
+    start = [
+        (t + timedelta(microseconds=500_000)).replace(microsecond=0)
+        for t in start_times
+    ]
+    stop = [
+        (t + timedelta(microseconds=500_000)).replace(microsecond=0)
+        for t in stop_times
+    ]
     return start, stop
 
 

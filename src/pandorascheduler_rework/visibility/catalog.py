@@ -36,12 +36,16 @@ def build_visibility_catalog(
 
     if not config.output_dir:
         raise ValueError("config.output_dir is required for visibility generation")
-    
+
     output_root = config.output_dir / "data" / output_subpath
     output_root.mkdir(parents=True, exist_ok=True)
 
     target_path = target_list if target_list.is_absolute() else target_list.resolve()
-    gmat_path = config.gmat_ephemeris if config.gmat_ephemeris.is_absolute() else config.gmat_ephemeris.resolve()
+    gmat_path = (
+        config.gmat_ephemeris
+        if config.gmat_ephemeris.is_absolute()
+        else config.gmat_ephemeris.resolve()
+    )
 
     target_manifest = _load_target_manifest(target_path, config.target_filters)
     if target_manifest.empty:
@@ -76,16 +80,16 @@ def build_visibility_catalog(
         )
 
         if "exoplanet" not in target_path.name.lower():
-            visibility_df["Time(MJD_UTC)"] = np.round(
-                visibility_df["Time(MJD_UTC)"], 6
-            )
+            visibility_df["Time(MJD_UTC)"] = np.round(visibility_df["Time(MJD_UTC)"], 6)
 
         visibility_df.to_csv(output_path, index=False)
 
     planet_manifests: list[tuple[pd.DataFrame, Path]] = [(target_manifest, target_path)]
 
     if partner_list is not None:
-        partner_path = partner_list if partner_list.is_absolute() else partner_list.resolve()
+        partner_path = (
+            partner_list if partner_list.is_absolute() else partner_list.resolve()
+        )
         partner_manifest = _load_target_manifest(partner_path, config.target_filters)
         if not partner_manifest.empty:
             star_metadata.update(_build_star_metadata(partner_manifest))
@@ -165,11 +169,15 @@ def _build_star_visibility(
 
     # Pre-convert MJD to datetime for scheduler performance
     from astropy.time import Time
+
     time_utc = Time(payload["Time(MJD_UTC)"], format="mjd", scale="utc")
     datetime_utc = time_utc.to_datetime()
-    
+
     # Round to nearest second to avoid microsecond precision in CSV output
-    datetime_utc = [(dt + timedelta(microseconds=500_000)).replace(microsecond=0) for dt in datetime_utc]
+    datetime_utc = [
+        (dt + timedelta(microseconds=500_000)).replace(microsecond=0)
+        for dt in datetime_utc
+    ]
 
     data = {
         "Time(MJD_UTC)": payload["Time(MJD_UTC)"],
@@ -189,7 +197,7 @@ def _resolve_star_coord(
 ) -> SkyCoord:
     """Resolve star coordinates from catalog data only (no Simbad lookups)."""
     star_name = str(row.get("Star Name", ""))
-    
+
     ra_val = row.get("RA")
     dec_val = row.get("DEC")
 
@@ -202,8 +210,10 @@ def _resolve_star_coord(
             dec_val = fallback_dec
 
     if pd.notna(ra_val) and pd.notna(dec_val):
-        return SkyCoord(ra=float(ra_val) * u.deg, dec=float(dec_val) * u.deg, frame="icrs")
-    
+        return SkyCoord(
+            ra=float(ra_val) * u.deg, dec=float(dec_val) * u.deg, frame="icrs"
+        )
+
     # No Simbad fallback - raise error if coordinates not in catalog
     raise RuntimeError(f"No coordinates found in catalog for {star_name}")
 
@@ -242,12 +252,14 @@ def _build_planet_transits(
     missing = required_columns.difference(manifest.columns)
     if missing:
         LOGGER.info(
-            "Manifest %s missing planet columns; skipping transit generation (assuming star-only targets).",
+            "Manifest %s missing planet columns; skipping transit generation",
             manifest_path.name,
         )
         return []
 
-    observer_location = EarthLocation(lat=0.0 * u.deg, lon=0.0 * u.deg, height=600.0 * u.km)
+    observer_location = EarthLocation(
+        lat=0.0 * u.deg, lon=0.0 * u.deg, height=600.0 * u.km
+    )
 
     generated: list[tuple[str, str]] = []
 
@@ -255,7 +267,9 @@ def _build_planet_transits(
         star_name = str(row.get("Star Name", ""))
         planet_name = str(row.get("Planet Name", ""))
 
-        star_visibility_path = output_root / star_name / f"Visibility for {star_name}.csv"
+        star_visibility_path = (
+            output_root / star_name / f"Visibility for {star_name}.csv"
+        )
         if not star_visibility_path.exists():
             LOGGER.warning(
                 "Star visibility missing for %s; skipping planet %s",
@@ -269,7 +283,9 @@ def _build_planet_transits(
         planet_output = planet_dir / f"Visibility for {planet_name}.csv"
         if planet_output.exists() and not config.force_regenerate:
             LOGGER.info(
-                "Skipping %s/%s; planet visibility already exists", star_name, planet_name
+                "Skipping %s/%s; planet visibility already exists",
+                star_name,
+                planet_name,
             )
             generated.append((star_name, planet_name))
             continue
@@ -303,7 +319,15 @@ def _compute_planet_transits(
 
     if t_mjd.size == 0:
         return pd.DataFrame(
-            {col: np.array([], dtype=float) for col in ["Transits", "Transit_Start", "Transit_Stop", "Transit_Coverage"]}
+            {
+                col: np.array([], dtype=float)
+                for col in [
+                    "Transits",
+                    "Transit_Start",
+                    "Transit_Stop",
+                    "Transit_Coverage",
+                ]
+            }
         )
 
     transit_duration = planet_row["Transit Duration (hrs)"]
@@ -317,7 +341,15 @@ def _compute_planet_transits(
             planet_name,
         )
         return pd.DataFrame(
-            {col: np.array([], dtype=float) for col in ["Transits", "Transit_Start", "Transit_Stop", "Transit_Coverage"]}
+            {
+                col: np.array([], dtype=float)
+                for col in [
+                    "Transits",
+                    "Transit_Start",
+                    "Transit_Stop",
+                    "Transit_Coverage",
+                ]
+            }
         )
 
     transit_duration = float(transit_duration) * u.hour
@@ -334,11 +366,15 @@ def _compute_planet_transits(
         scale="tdb",
         location=observer_location,
     )
-    light_time = bjd_tdb.light_travel_time(star_coord, kind="barycentric", location=observer_location)
+    light_time = bjd_tdb.light_travel_time(
+        star_coord, kind="barycentric", location=observer_location
+    )
     jd_tdb = bjd_tdb - light_time
     epoch_mjd_utc = Time(jd_tdb.mjd, format="mjd", scale="utc")
 
-    half_obs_width = 0.75 * u.hour + np.maximum(1.0 * u.hour + transit_duration / 2.0, transit_duration)
+    half_obs_width = 0.75 * u.hour + np.maximum(
+        1.0 * u.hour + transit_duration / 2.0, transit_duration
+    )
     time_grid = Time(t_mjd, format="mjd", scale="utc")
 
     if period <= 0 * u.day:
@@ -347,7 +383,15 @@ def _compute_planet_transits(
             planet_name,
         )
         return pd.DataFrame(
-            {col: np.array([], dtype=float) for col in ["Transits", "Transit_Start", "Transit_Stop", "Transit_Coverage"]}
+            {
+                col: np.array([], dtype=float)
+                for col in [
+                    "Transits",
+                    "Transit_Start",
+                    "Transit_Stop",
+                    "Transit_Coverage",
+                ]
+            }
         )
 
     min_start_epoch = epoch_mjd_utc - half_obs_width
@@ -365,7 +409,15 @@ def _compute_planet_transits(
 
     if not mid_transits_list:
         return pd.DataFrame(
-            {col: np.array([], dtype=float) for col in ["Transits", "Transit_Start", "Transit_Stop", "Transit_Coverage"]}
+            {
+                col: np.array([], dtype=float)
+                for col in [
+                    "Transits",
+                    "Transit_Start",
+                    "Transit_Stop",
+                    "Transit_Coverage",
+                ]
+            }
         )
 
     mid_transits = Time(mid_transits_list)
@@ -391,15 +443,9 @@ def _compute_planet_transits(
     dt_iso_utc = T_iso_utc.to_value("datetime")
 
     dt_vis_times = [
-        dt
-        for dt, visible in zip(dt_iso_utc, visible_mask)
-        if visible == 1.0
+        dt for dt, visible in zip(dt_iso_utc, visible_mask) if visible == 1.0
     ]
-    dt_saa_times = [
-        dt
-        for dt, saa in zip(dt_iso_utc, saa_mask)
-        if saa == 1.0
-    ]
+    dt_saa_times = [dt for dt, saa in zip(dt_iso_utc, saa_mask) if saa == 1.0]
 
     coverage = np.zeros(len(start_datetimes), dtype=float)
     saa_overlap = np.zeros(len(start_datetimes), dtype=float)
@@ -452,25 +498,37 @@ def _apply_transit_overlaps(
         minute_sets: dict[str, list[tuple[set, int]]] = {}
 
         for planet in planets:
-            planet_path = output_root / star_name / planet / f"Visibility for {planet}.csv"
+            planet_path = (
+                output_root / star_name / planet / f"Visibility for {planet}.csv"
+            )
             if not planet_path.exists():
-                raise FileNotFoundError(f"Expected planet visibility missing: {planet_path}")
+                raise FileNotFoundError(
+                    f"Expected planet visibility missing: {planet_path}"
+                )
             df = read_csv_cached(str(planet_path))
             if df is None:
-                raise FileNotFoundError(f"Unable to read planet visibility: {planet_path}")
+                raise FileNotFoundError(
+                    f"Unable to read planet visibility: {planet_path}"
+                )
             # Skip planets with no transits (empty DataFrame except for headers)
             if df.empty:
                 continue
             planet_data[planet] = df
             sets: list[tuple[set, int]] = []
             for _, row in df.iterrows():
-                start_dt = Time(
-                    float(row["Transit_Start"]), format="mjd", scale="utc"
-                ).to_datetime(timezone=None).replace(second=0, microsecond=0)
-                end_dt = Time(
-                    float(row["Transit_Stop"]), format="mjd", scale="utc"
-                ).to_datetime(timezone=None).replace(second=0, microsecond=0)
-                minutes = list(pd.date_range(start_dt, end_dt, freq="min").to_pydatetime())
+                start_dt = (
+                    Time(float(row["Transit_Start"]), format="mjd", scale="utc")
+                    .to_datetime(timezone=None)
+                    .replace(second=0, microsecond=0)
+                )
+                end_dt = (
+                    Time(float(row["Transit_Stop"]), format="mjd", scale="utc")
+                    .to_datetime(timezone=None)
+                    .replace(second=0, microsecond=0)
+                )
+                minutes = list(
+                    pd.date_range(start_dt, end_dt, freq="min").to_pydatetime()
+                )
                 if not minutes:
                     sets.append((set(), 0))
                 else:
@@ -494,12 +552,16 @@ def _apply_transit_overlaps(
                         if shared:
                             overlap_fraction = len(shared) / total
                             best_overlap = max(best_overlap, min(overlap_fraction, 1.0))
-                overlaps[idx] = min(best_overlap, 1.0)  # Ensure overlap never exceeds 1.0
+                overlaps[idx] = min(
+                    best_overlap, 1.0
+                )  # Ensure overlap never exceeds 1.0
 
             if "Transit_Overlap" in df.columns:
                 df["Transit_Overlap"] = overlaps
             else:
                 df["Transit_Overlap"] = overlaps
 
-            planet_path = output_root / star_name / planet / f"Visibility for {planet}.csv"
+            planet_path = (
+                output_root / star_name / planet / f"Visibility for {planet}.csv"
+            )
             df.to_csv(planet_path, index=False)

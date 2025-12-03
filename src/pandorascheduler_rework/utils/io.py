@@ -13,7 +13,9 @@ import pandas as pd
 LOGGER = logging.getLogger(__name__)
 
 
-def _read_csv_with_mtime(file_path: str, mtime: Optional[float]) -> Optional[pd.DataFrame]:
+def _read_csv_with_mtime(
+    file_path: str, mtime: Optional[float]
+) -> Optional[pd.DataFrame]:
     """Internal reader cached by (file_path, mtime).
 
     The wrapper `read_csv_cached` computes a file's mtime and passes
@@ -67,15 +69,15 @@ read_csv_cached.cache_info = _read_csv_with_mtime.cache_info
 
 def build_visibility_path(base_dir: Path, star_name: str, target_name: str) -> Path:
     """Build consistent visibility file path for planets.
-    
+
     Pattern: base_dir / star_name / target_name / "Visibility for {target_name}.csv"
     Used throughout scheduler to avoid repeated f-string formatting.
-    
+
     Args:
         base_dir: Base directory (e.g., output/data/targets)
         star_name: Name of the star
         target_name: Name of the planet/target
-        
+
     Returns:
         Path to visibility file
     """
@@ -84,28 +86,30 @@ def build_visibility_path(base_dir: Path, star_name: str, target_name: str) -> P
 
 def build_star_visibility_path(base_dir: Path, star_name: str) -> Path:
     """Build visibility path for a star (no planet subdirectory).
-    
+
     Pattern: base_dir / star_name / "Visibility for {star_name}.csv"
-    
+
     Args:
         base_dir: Base directory (e.g., output/data/aux_targets)
         star_name: Name of the star
-        
+
     Returns:
         Path to visibility file
     """
     return base_dir / star_name / f"Visibility for {star_name}.csv"
 
 
-def read_star_visibility_cached(base_dir: Path, star_name: str) -> Optional[pd.DataFrame]:
+def read_star_visibility_cached(
+    base_dir: Path, star_name: str
+) -> Optional[pd.DataFrame]:
     """Read star visibility file with caching.
-    
+
     Convenience wrapper that combines path building and cached reading.
-    
+
     Args:
         base_dir: Base directory (e.g., output/data/aux_targets)
         star_name: Name of the star
-        
+
     Returns:
         DataFrame with visibility data or None if file doesn't exist
     """
@@ -114,19 +118,17 @@ def read_star_visibility_cached(base_dir: Path, star_name: str) -> Optional[pd.D
 
 
 def read_planet_visibility_cached(
-    base_dir: Path, 
-    star_name: str, 
-    planet_name: str
+    base_dir: Path, star_name: str, planet_name: str
 ) -> Optional[pd.DataFrame]:
     """Read planet visibility file with caching.
-    
+
     Convenience wrapper that combines path building and cached reading.
-    
+
     Args:
         base_dir: Base directory (e.g., output/data/targets)
         star_name: Name of the star
         planet_name: Name of the planet
-        
+
     Returns:
         DataFrame with transit visibility data or None if file doesn't exist
     """

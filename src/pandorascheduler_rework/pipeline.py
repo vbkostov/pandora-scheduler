@@ -49,10 +49,10 @@ class SchedulerResult:
 
 def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
     """Run the modern scheduler and persist outputs alongside diagnostics.
-    
+
     Args:
         config: Unified configuration object
-        
+
     Returns:
         SchedulerResult with paths to generated files
     """
@@ -69,7 +69,6 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
     # matches the expectations of downstream components.
     paths = SchedulerPaths.from_package_root(output_dir)
 
-
     # Prepare extra_inputs
     extra_inputs = config.extra_inputs
 
@@ -77,7 +76,7 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
     # write the generated CSV manifests into the run's output data directory so
     # subsequent steps (visibility & calendar generation) can find them there.
     out_data = output_dir / "data"
-    
+
     # We need to resolve these paths now to pass to target manifest generation
     # IMPORTANT: Use absolute paths to avoid legacy folder lookups
     primary_target_csv = _coerce_path(
@@ -109,7 +108,7 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
                 _target_definition_from_csv(occultation_target_csv),
             ],
         )
-        
+
         target_definition_base = _coerce_optional_path(
             extra_inputs.get("target_definition_base")
         )
@@ -118,7 +117,9 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
             # Allow callers to opt-out of regenerating manifests (use existing CSVs)
             skip_manifests = _as_bool(extra_inputs.get("skip_manifests"), False)
             if skip_manifests:
-                LOGGER.info("Skipping generation of target manifests (skip_manifests=True)")
+                LOGGER.info(
+                    "Skipping generation of target manifests (skip_manifests=True)"
+                )
             else:
                 _generate_target_manifests(
                     target_definition_files,
@@ -139,7 +140,9 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
         ]
 
     if config.targets_manifest and not config.targets_manifest.exists():
-        raise FileNotFoundError(f"Provided targets_manifest not found: {config.targets_manifest}")
+        raise FileNotFoundError(
+            f"Provided targets_manifest not found: {config.targets_manifest}"
+        )
 
     _maybe_generate_visibility(
         config,
@@ -154,7 +157,9 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
 
     target_list = read_csv_cached(str(primary_target_csv))
     if target_list is None:
-        raise FileNotFoundError(f"Primary target manifest not found: {primary_target_csv}")
+        raise FileNotFoundError(
+            f"Primary target manifest not found: {primary_target_csv}"
+        )
 
     scheduler_inputs = SchedulerInputs(
         pandora_start=config.window_start,
@@ -172,7 +177,7 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
     )
 
     # scheduler_config = config.to_scheduler_config() (Removed)
-    
+
     outputs = run_scheduler(scheduler_inputs, config)
 
     reports: Dict[str, Path] = {}
@@ -205,17 +210,25 @@ def _maybe_generate_visibility(
     monitoring_target_csv: Path,
     occultation_target_csv: Path,
 ) -> None:
-    # Determine whether we should generate visibility. Default: True when a GMAT ephemeris
-    # is provided, or when explicitly requested via extra_inputs.
+    # Determine whether we should generate visibility.
+    # Default: True when a GMAT ephemeris is provided, or when explicitly requested.
     generate_visibility = bool(config.gmat_ephemeris) or bool(
-        str(config.extra_inputs.get("generate_visibility", "")).lower() in {"1", "true", "yes", "y"}
+        str(config.extra_inputs.get("generate_visibility", "")).lower()
+        in {"1", "true", "yes", "y"}
     )
 
     if not generate_visibility:
         return
 
     # 1. Primary Targets -> data/targets
-    LOGGER.info("Generating visibility for Primary Targets in %s", config.output_dir / "data" / "targets" if config.output_dir else "output/data/targets")
+    LOGGER.info(
+        "Generating visibility for Primary Targets in %s",
+        (
+            config.output_dir / "data" / "targets"
+            if config.output_dir
+            else "output/data/targets"
+        ),
+    )
     build_visibility_catalog(
         config,
         target_list=primary_target_csv,
@@ -224,7 +237,14 @@ def _maybe_generate_visibility(
     )
 
     # 2. Auxiliary Targets -> data/aux_targets
-    LOGGER.info("Generating visibility for Auxiliary Targets in %s", config.output_dir / "data" / "aux_targets" if config.output_dir else "output/data/aux_targets")
+    LOGGER.info(
+        "Generating visibility for Auxiliary Targets in %s",
+        (
+            config.output_dir / "data" / "aux_targets"
+            if config.output_dir
+            else "output/data/aux_targets"
+        ),
+    )
     build_visibility_catalog(
         config,
         target_list=auxiliary_target_csv,
@@ -233,7 +253,14 @@ def _maybe_generate_visibility(
     )
 
     # 3. Monitoring Targets -> data/aux_targets
-    LOGGER.info("Generating visibility for Monitoring Targets in %s", config.output_dir / "data" / "aux_targets" if config.output_dir else "output/data/aux_targets")
+    LOGGER.info(
+        "Generating visibility for Monitoring Targets in %s",
+        (
+            config.output_dir / "data" / "aux_targets"
+            if config.output_dir
+            else "output/data/aux_targets"
+        ),
+    )
     build_visibility_catalog(
         config,
         target_list=monitoring_target_csv,
@@ -242,7 +269,14 @@ def _maybe_generate_visibility(
     )
 
     # 3. Occultation Targets -> data/aux_targets
-    LOGGER.info("Generating visibility for Occultation Targets in %s", config.output_dir / "data" / "aux_targets" if config.output_dir else "output/data/aux_targets")
+    LOGGER.info(
+        "Generating visibility for Occultation Targets in %s",
+        (
+            config.output_dir / "data" / "aux_targets"
+            if config.output_dir
+            else "output/data/aux_targets"
+        ),
+    )
     build_visibility_catalog(
         config,
         target_list=occultation_target_csv,
@@ -282,6 +316,7 @@ def _generate_target_manifests(
         target_definition_files,
         primary_target_csv.parent.parent,
     )
+
 
 # _build_visibility_config removed (legacy)
 
@@ -346,13 +381,16 @@ def _coerce_transit_scheduling_weights(value: object) -> tuple[float, float, flo
         components = [value]
 
     if not components:
-        raise ValueError("transit_scheduling_weights must provide three numeric components")
+        raise ValueError(
+            "transit_scheduling_weights must provide three numeric components"
+        )
 
     weights = tuple(_as_float(component, 0.0) for component in components)
 
     if len(weights) != 3:
         raise ValueError(
-            "transit_scheduling_weights must contain exactly three values (coverage, saa, schedule)."
+            "transit_scheduling_weights must contain exactly three values "
+            "(coverage, saa, schedule)."
         )
     return (weights[0], weights[1], weights[2])
 
