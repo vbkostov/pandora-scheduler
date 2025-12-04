@@ -202,6 +202,7 @@ poetry run python run_scheduler.py \
     --output ./pipeline_output \
     --target-definitions /path/to/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress
 ```
 
