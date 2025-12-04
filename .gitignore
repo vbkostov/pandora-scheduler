@@ -2,6 +2,7 @@ sandbox
 
 # IDE settings
 .vscode/
+copilot-instructions.md
 
 # Mac things
 .DS_Store
