@@ -135,6 +135,26 @@ class PandoraSchedulerConfig:
     """Prioritize occultation targets by slew angle."""
 
     # ============================================================================
+    # LEGACY COMPATIBILITY
+    # ============================================================================
+
+    use_legacy_mode: bool = False
+    """Enable legacy scheduling behavior for validation against old outputs.
+    
+    When True, uses legacy algorithms that match the original scheduler exactly.
+    When False (default), uses improved algorithms that may produce slightly
+    different but equally valid (or better) results.
+    
+    Legacy behaviors controlled by this flag:
+    - Visibility filtering: Uses MJD-based filtering (legacy) vs datetime-based
+      filtering (modern). MJD filtering can exclude boundary points due to
+      floating-point precision, while datetime filtering is more precise.
+    
+    Set to True when validating against historical baseline outputs.
+    Set to False for production use with improved algorithms.
+    """
+
+    # ============================================================================
     # AUXILIARY SORTING
     # ============================================================================
 

@@ -104,7 +104,7 @@ class TestConfigParameterPropagation:
         pd.DataFrame({
             "Time(MJD_UTC)": [60000.0],
             "Visible": [1]
-        }).to_csv(vis_dir / "Visibility for Test.csv", index=False)
+        }).to_parquet(vis_dir / "Visibility for Test.parquet", index=False)
         
         inputs = ScienceCalendarInputs(
             schedule_csv=schedule_path,

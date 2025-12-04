@@ -24,7 +24,7 @@ class TestPathBuilding:
         
         result = build_visibility_path(base, star, planet)
         
-        assert result == Path("/data/targets/TOI-700/TOI-700 b/Visibility for TOI-700 b.csv")
+        assert result == Path("/data/targets/TOI-700/TOI-700 b/Visibility for TOI-700 b.parquet")
 
     def test_build_visibility_path_with_spaces(self):
         """Test path construction with spaces in names."""
@@ -34,7 +34,7 @@ class TestPathBuilding:
         
         result = build_visibility_path(base, star, planet)
         
-        assert result == Path("/output/data/targets/HD 189733/HD 189733 b/Visibility for HD 189733 b.csv")
+        assert result == Path("/output/data/targets/HD 189733/HD 189733 b/Visibility for HD 189733 b.parquet")
 
     def test_build_star_visibility_path(self):
         """Test star-only visibility path construction."""
@@ -43,7 +43,7 @@ class TestPathBuilding:
         
         result = build_star_visibility_path(base, star)
         
-        assert result == Path("/data/aux_targets/Vega/Visibility for Vega.csv")
+        assert result == Path("/data/aux_targets/Vega/Visibility for Vega.parquet")
 
     def test_build_star_visibility_path_with_underscores(self):
         """Test star path with underscores."""
@@ -52,7 +52,7 @@ class TestPathBuilding:
         
         result = build_star_visibility_path(base, star)
         
-        assert result == Path("/output/data/aux_targets/GJ_1214/Visibility for GJ_1214.csv")
+        assert result == Path("/output/data/aux_targets/GJ_1214/Visibility for GJ_1214.parquet")
 
 
 class TestReadCsvCached:
@@ -122,12 +122,12 @@ class TestConvenienceWrappers:
         star_dir = tmp_path / "Vega"
         star_dir.mkdir()
         
-        vis_file = star_dir / "Visibility for Vega.csv"
+        vis_file = star_dir / "Visibility for Vega.parquet"
         test_data = pd.DataFrame({
             "Time(MJD_UTC)": [59000.0],
             "Visible": [1],
         })
-        test_data.to_csv(vis_file, index=False)
+        test_data.to_parquet(vis_file, index=False)
         
         # Read using wrapper
         result = read_star_visibility_cached(tmp_path, "Vega")
@@ -149,13 +149,13 @@ class TestConvenienceWrappers:
         planet_dir = star_dir / "TOI-700 b"
         planet_dir.mkdir(parents=True)
         
-        vis_file = planet_dir / "Visibility for TOI-700 b.csv"
+        vis_file = planet_dir / "Visibility for TOI-700 b.parquet"
         test_data = pd.DataFrame({
             "Transit_Start": [59000.0],
             "Transit_Stop": [59000.1],
             "Transit_Coverage": [0.95],
         })
-        test_data.to_csv(vis_file, index=False)
+        test_data.to_parquet(vis_file, index=False)
         
         # Read using wrapper
         result = read_planet_visibility_cached(tmp_path, "TOI-700", "TOI-700 b")

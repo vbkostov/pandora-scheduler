@@ -30,14 +30,11 @@ from pandorascheduler_rework.targets.manifest import build_target_manifest
 from pandorascheduler_rework.utils.io import (
     build_star_visibility_path,
     build_visibility_path,
-    read_csv_cached,
+    read_parquet_cached,
 )
 
 LOGGER = logging.getLogger(__name__)
 
-PACKAGE_DIR = Path(__file__).resolve().parent
-LEGACY_PACKAGE_DIR = PACKAGE_DIR.parent / "pandorascheduler"
-DATA_ROOTS = [PACKAGE_DIR / "data", LEGACY_PACKAGE_DIR / "data"]
 _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 
 
@@ -389,6 +386,7 @@ def check_if_transits_in_obs_window(
     obs_window: timedelta,
     transit_scheduling_weights: Sequence[float],
     transit_coverage_min: float,
+    targets_dir: Path,
 ):
 
     result_df = temp_df.copy()
@@ -427,17 +425,21 @@ def check_if_transits_in_obs_window(
             continue
 
         star_name = str(planet_lookup.loc[planet_name, "Star Name"])
-        visibility_file = _planet_visibility_file(star_name, str(planet_name))
-        if visibility_file is None:
-            LOGGER.debug(
-                "Skipping %s; visibility file not found under %s",
-                planet_name,
-                star_name,
-            )
-            continue
+        
+        try:
+            visibility_file = _planet_visibility_file(targets_dir, star_name, str(planet_name))
+        except FileNotFoundError as e:
+            LOGGER.error(str(e))
+            raise
 
-        planet_data = read_csv_cached(str(visibility_file))
-        if planet_data is None or planet_data.empty:
+        planet_data = read_parquet_cached(str(visibility_file))
+        if planet_data is None:
+            raise ValueError(
+                f"Planet visibility file exists but is unreadable: {visibility_file}"
+            )
+        
+        # Skip planets with no transits in the scheduling window (valid case)
+        if planet_data.empty:
             continue
 
         planet_data = planet_data.drop(
@@ -542,32 +544,7 @@ def check_if_transits_in_obs_window(
     return result_df
 
 
-def _default_target_definition_base() -> Path:
-    env_value = os.environ.get("PANDORA_TARGET_DEFINITION_BASE")
-    if env_value:
-        candidate = Path(env_value).expanduser()
-        if candidate.is_dir():
-            return candidate
-        raise FileNotFoundError(
-            f"Configured target definition base not found: {candidate}"
-        )
-
-    fallback = (
-        Path(__file__).resolve().parents[3]
-        / "comparison_outputs"
-        / "target_definition_files_limited"
-    )
-    if fallback.is_dir():
-        return fallback
-
-    raise FileNotFoundError(
-        "Unable to locate target definition files. Set the "
-        "PANDORA_TARGET_DEFINITION_BASE environment variable to the root of "
-        "the PandoraTargetList repository."
-    )
-
-
-def process_target_files(keyword: str, *, base_path: Path | None = None):
+def process_target_files(keyword: str, *, base_path: Path) -> pd.DataFrame:
     """Return the scheduler manifest for *keyword* targets.
 
     Parameters
@@ -576,17 +553,9 @@ def process_target_files(keyword: str, *, base_path: Path | None = None):
         Category name matching a directory in the target definition
         repository, e.g. ``"exoplanet"``.
     base_path
-        Optional override for the target definition repository root. When
-        omitted the function first honours the
-        ``PANDORA_TARGET_DEFINITION_BASE`` environment variable and finally
-        falls back to the curated fixture subset under
-        ``comparison_outputs/target_definition_files_limited``.
+        Path to the target definition repository root (e.g. PandoraTargetList).
     """
-
-    base_dir = (
-        Path(base_path) if base_path is not None else _default_target_definition_base()
-    )
-    return build_target_manifest(keyword, base_dir)
+    return build_target_manifest(keyword, base_path)
 
 
 def create_aux_list(target_definition_files: Sequence[str], package_dir):
@@ -650,7 +619,7 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
 
 @functools.lru_cache(maxsize=32)
 def _load_visibility_data(file_path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Load and cache visibility data from CSV file.
+    """Load and cache visibility data from parquet or CSV file.
 
     This function is cached to avoid repeatedly reading the same file
     when scheduling multiple observation windows for the same target.
@@ -660,40 +629,43 @@ def _load_visibility_data(file_path: Path) -> tuple[np.ndarray, np.ndarray]:
     Parameters
     ----------
     file_path
-        Path to the visibility CSV file.
+        Path to the visibility file (parquet or CSV).
 
     Returns
     -------
     tuple[np.ndarray, np.ndarray]
         Time array (MJD_UTC) and visibility flags.
     """
-    vis = pd.read_csv(file_path, usecols=["Time(MJD_UTC)", "Visible"])
+    if file_path.suffix == ".csv":
+        vis = pd.read_csv(file_path, usecols=["Time(MJD_UTC)", "Visible"])
+    else:
+        vis = pd.read_parquet(file_path, columns=["Time(MJD_UTC)", "Visible"])
     return vis["Time(MJD_UTC)"].to_numpy(), vis["Visible"].to_numpy()
 
 
 def _resolve_visibility_file(target_name: str, base_path: Path | None) -> Path | None:
-    candidates: list[Path] = []
+    """Find visibility file for a target in the given base path.
+    
+    The base_path should be the directory containing target subdirectories,
+    e.g., 'data/aux_targets' or 'data/targets'.
+    """
+    if base_path is None:
+        return None
 
-    for data_root in DATA_ROOTS:
-        for subdir in ("targets", "aux_targets"):
-            candidates.append(
-                build_star_visibility_path(data_root / subdir, target_name)
-            )
-
-    if base_path is not None:
-        candidate = build_star_visibility_path(base_path, target_name)
-        candidates.append(candidate)
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+    candidate = build_star_visibility_path(base_path, target_name)
+    if candidate.is_file():
+        return candidate
 
     return None
 
 
-def _planet_visibility_file(star_name: str, planet_name: str) -> Path | None:
-    for data_root in DATA_ROOTS:
-        candidate = build_visibility_path(data_root / "targets", star_name, planet_name)
-        if candidate.is_file():
-            return candidate
-    return None
+def _planet_visibility_file(targets_dir: Path, star_name: str, planet_name: str) -> Path:
+    """Find planet visibility file, raising error if not found."""
+    candidate = build_visibility_path(targets_dir, star_name, planet_name)
+    if not candidate.is_file():
+        raise FileNotFoundError(
+            f"Planet visibility file not found: {candidate}\n"
+            f"  Star: {star_name}, Planet: {planet_name}\n"
+            f"  Expected path: {candidate}"
+        )
+    return candidate

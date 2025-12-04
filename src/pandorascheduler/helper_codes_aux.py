@@ -9,7 +9,6 @@ from typing import Iterable, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from astropy.time import Time
 from tqdm import tqdm
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))

@@ -206,6 +206,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip regenerating target manifests from target definition files",
     )
+    parser.add_argument(
+        "--legacy-mode",
+        action="store_true",
+        help=(
+            "Use legacy scheduling algorithms for validation against historical outputs. "
+            "When enabled, uses MJD-based visibility filtering which matches the original "
+            "scheduler exactly. Default (disabled) uses improved datetime-based filtering."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -254,8 +263,12 @@ def print_summary(result: SchedulerResult, xml_path: Optional[Path]) -> None:
             try:
                 total_obs = len(schedule_df)
                 unique_targets = int(schedule_df["Target"].nunique()) if "Target" in schedule_df.columns else 0
-                primary_obs = schedule_df[schedule_df["Type"] == "Primary"] if "Type" in schedule_df.columns else []
-                primary_count = len(primary_obs)
+                # Primary observations are those without " STD" suffix (not auxiliary/standard targets)
+                if "Target" in schedule_df.columns:
+                    primary_obs = schedule_df[~schedule_df["Target"].str.contains(" STD", na=False)]
+                    primary_count = len(primary_obs)
+                else:
+                    primary_count = 0
             except Exception:
                 total_obs = 0
                 unique_targets = 0
@@ -393,6 +406,7 @@ def main() -> int:
             
             # Flags
             show_progress=args.show_progress,
+            use_legacy_mode=args.legacy_mode,
         )
 
         # 3. Ensure targets manifest location exists (may be an output/data dir)
@@ -405,6 +419,8 @@ def main() -> int:
 
         # 4. Run Scheduler (using new API)
         logger.info("Starting scheduler pipeline...")
+        if args.legacy_mode:
+            logger.info("Legacy mode enabled - using MJD-based visibility filtering")
         result = build_schedule(config)
 
         # 4. Generate Science Calendar XML

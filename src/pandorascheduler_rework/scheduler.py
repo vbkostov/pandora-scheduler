@@ -15,12 +15,60 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.utils.io import read_csv_cached
+from pandorascheduler_rework.utils.io import read_csv_cached, read_parquet_cached
 from pandorascheduler_rework.utils.string_ops import remove_suffix
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+
+def _filter_visibility_by_time(
+    vis: pd.DataFrame,
+    start: datetime,
+    stop: datetime,
+    use_legacy_mode: bool,
+) -> pd.DataFrame:
+    """Filter visibility data to a time window.
+    
+    Args:
+        vis: Visibility DataFrame with Time(MJD_UTC) and optionally Time_UTC columns
+        start: Start of time window
+        stop: End of time window
+        use_legacy_mode: If True, use MJD-based filtering (matches legacy exactly).
+                        If False, use datetime-based filtering (more precise at boundaries).
+    
+    Returns:
+        Filtered visibility DataFrame
+        
+    Note:
+        Legacy mode uses MJD filtering which can exclude boundary points due to
+        floating-point precision. For example, if start converts to MJD 61079.6048611111
+        but the data has 61079.6048610000, the row is excluded. Datetime filtering
+        includes such boundary rows correctly.
+        
+        The practical difference is typically 0-2 rows at window boundaries, which
+        can affect visibility percentage calculations and thus target selection
+        when multiple targets have similar visibility.
+    """
+    if use_legacy_mode:
+        # Legacy: MJD-based filtering (matches original scheduler exactly)
+        start_mjd = Time(start).mjd
+        stop_mjd = Time(stop).mjd
+        mask = (vis["Time(MJD_UTC)"] >= start_mjd) & (vis["Time(MJD_UTC)"] <= stop_mjd)
+    else:
+        # Modern: Datetime-based filtering (more precise at boundaries)
+        if "Time_UTC" in vis.columns:
+            vis_times = pd.to_datetime(vis["Time_UTC"])
+        else:
+            # Fallback to MJD conversion
+            vis_times = Time(
+                vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
+            ).to_datetime()
+            vis_times = pd.to_datetime(vis_times)
+        mask = (vis_times >= start) & (vis_times <= stop)
+    
+    return vis.loc[mask]
 
 
 @dataclass(frozen=True)
@@ -179,6 +227,7 @@ def run_scheduler(
             config.obs_window,
             list(config.transit_scheduling_weights),
             config.transit_coverage_min,
+            inputs.paths.targets_dir,
         )
 
         too_result = _handle_targets_of_opportunity(
@@ -338,7 +387,7 @@ def _initialize_tracker(
         )
         planet_data = None
         try:
-            planet_data = read_csv_cached(str(visibility_path))
+            planet_data = read_parquet_cached(str(visibility_path))
         except Exception:
             planet_data = None
 
@@ -496,26 +545,43 @@ def _load_planet_transit_windows(
 ) -> dict[str, tuple[datetime, datetime]]:
     """Batch-load transit windows for multiple planets to avoid repeated CSV reads."""
     transit_windows = {}
+    
+    # Build planet -> star name lookup from target list
+    planet_to_star = dict(zip(
+        inputs.target_list["Planet Name"],
+        inputs.target_list["Star Name"]
+    ))
 
     for planet_name in planet_names:
         planet_str = str(planet_name)
-        star_name = remove_suffix(planet_str)
-        try:
-            planet_visibility = read_csv_cached(
-                str(
-                    observation_utils.build_visibility_path(
-                        inputs.paths.targets_dir, star_name, planet_str
-                    )
-                )
+        star_name = planet_to_star.get(planet_str)
+        if star_name is None:
+            raise ValueError(
+                f"Planet {planet_str} not found in target list. "
+                f"Cannot determine star name."
             )
-        except FileNotFoundError:
-            continue
-
-        if (
-            planet_visibility is None
-            or planet_visibility.empty
-            or len(planet_visibility) == 0
-        ):
+        star_name = str(star_name)
+        
+        vis_path = observation_utils.build_visibility_path(
+            inputs.paths.targets_dir, star_name, planet_str
+        )
+        if not vis_path.is_file():
+            raise FileNotFoundError(
+                f"Planet visibility file not found: {vis_path}\n"
+                f"  Planet: {planet_str}, Star: {star_name}\n"
+                f"  Expected at: {vis_path}"
+            )
+        
+        planet_visibility = read_parquet_cached(str(vis_path))
+        
+        if planet_visibility is None:
+            raise ValueError(
+                f"Planet visibility file exists but is unreadable: {vis_path}\n"
+                f"  Planet: {planet_str}, Star: {star_name}"
+            )
+        
+        # Skip planets with no transits in the scheduling window (valid case)
+        if planet_visibility.empty or len(planet_visibility) == 0:
             continue
 
         start_transit = Time(
@@ -721,28 +787,27 @@ def _schedule_auxiliary_target(
             vis_file = observation_utils.build_star_visibility_path(
                 inputs.paths.aux_targets_dir, std_name
             )
-            try:
-                vis = read_csv_cached(str(vis_file))
-            except FileNotFoundError:
-                continue
+            if not vis_file.is_file():
+                raise FileNotFoundError(
+                    f"Standard target visibility file not found: {vis_file}\n"
+                    f"  Target: {std_name}\n"
+                    f"  Expected at: {vis_file}"
+                )
+            
+            vis = read_parquet_cached(str(vis_file))
 
             if vis is None or vis.empty or len(vis) == 0:
-                continue
+                raise ValueError(
+                    f"Standard target visibility file exists but is empty: {vis_file}\n"
+                    f"  Target: {std_name}"
+                )
 
-            # Use pre-converted datetime if available (performance optimization)
-            if "Time_UTC" in vis.columns:
-                vis_times = pd.to_datetime(vis["Time_UTC"])
-            else:
-                # Fallback to MJD conversion for backward compatibility
-                vis_times = Time(
-                    vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
-                ).to_datetime()
-                vis_times = pd.to_datetime(vis_times)
-
-            mask = (vis_times >= active_start) & (
-                vis_times <= active_start + obs_std_duration
+            vis_filtered = _filter_visibility_by_time(
+                vis,
+                active_start,
+                active_start + obs_std_duration,
+                use_legacy_mode=config.use_legacy_mode,
             )
-            vis_filtered = vis.loc[mask]
 
             if not vis_filtered.empty and vis_filtered["Visible"].all():
                 std_candidate = (
@@ -846,26 +911,27 @@ def _schedule_auxiliary_target(
             vis_file = observation_utils.build_star_visibility_path(
                 inputs.paths.aux_targets_dir, name
             )
-            try:
-                vis = read_csv_cached(str(vis_file))
-            except FileNotFoundError:
-                continue
+            if not vis_file.is_file():
+                raise FileNotFoundError(
+                    f"Auxiliary target visibility file not found: {vis_file}\n"
+                    f"  Target: {name}\n"
+                    f"  Expected at: {vis_file}"
+                )
+            
+            vis = read_parquet_cached(str(vis_file))
 
             if vis is None or vis.empty or len(vis) == 0:
-                continue
+                raise ValueError(
+                    f"Auxiliary target visibility file exists but is empty: {vis_file}\n"
+                    f"  Target: {name}"
+                )
 
-            # Use pre-converted datetime if available (performance optimization)
-            if "Time_UTC" in vis.columns:
-                vis_times = pd.to_datetime(vis["Time_UTC"])
-            else:
-                # Fallback to MJD conversion for backward compatibility
-                vis_times = Time(
-                    vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
-                ).to_datetime()
-                vis_times = pd.to_datetime(vis_times)
-
-            mask = (vis_times >= active_start) & (vis_times <= stop)
-            vis_filtered = vis.loc[mask]
+            vis_filtered = _filter_visibility_by_time(
+                vis,
+                active_start,
+                stop,
+                use_legacy_mode=config.use_legacy_mode,
+            )
 
             if not vis_filtered.empty and vis_filtered["Visible"].all():
                 vis_all.append(idx)

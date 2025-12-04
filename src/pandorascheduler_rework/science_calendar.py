@@ -34,7 +34,7 @@ from pandorascheduler_rework.utils.array_ops import (
     break_long_sequences,
     remove_short_sequences,
 )
-from pandorascheduler_rework.utils.io import read_csv_cached
+from pandorascheduler_rework.utils.io import read_csv_cached, read_parquet_cached
 from pandorascheduler_rework.xml import observation_sequence
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 
@@ -525,6 +525,7 @@ def _parse_datetime(value: object) -> Optional[datetime]:
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%dT%H:%M:%SZ",
             "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d",  # Date only (time assumed to be 00:00:00)
         ):
             try:
                 return datetime.strptime(value, pattern)
@@ -604,8 +605,8 @@ def _lookup_occultation_info(
 
 def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     """Read star visibility file with caching."""
-    path = directory / f"Visibility for {name}.csv"
-    df = read_csv_cached(str(path))
+    path = directory / f"Visibility for {name}.parquet"
+    df = read_parquet_cached(str(path))
     if df is None:
         LOGGER.debug("Visibility file missing for %s", name)
         return None
@@ -616,8 +617,8 @@ def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
 
 def _read_planet_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     """Read planet visibility file with caching."""
-    path = directory / f"Visibility for {name}.csv"
-    df = read_csv_cached(str(path))
+    path = directory / f"Visibility for {name}.parquet"
+    df = read_parquet_cached(str(path))
     if df is None:
         LOGGER.debug("Planet visibility file missing for %s", name)
     return df

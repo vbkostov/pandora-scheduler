@@ -113,20 +113,20 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path, mo
     )
 
     output_root = mock_config.output_dir / "data" / "targets"
-    star_output = output_root / "TestStar" / "Visibility for TestStar.csv"
-    planet_output = output_root / "TestStar" / "TestPlanet" / "Visibility for TestPlanet.csv"
+    star_output = output_root / "TestStar" / "Visibility for TestStar.parquet"
+    planet_output = output_root / "TestStar" / "TestPlanet" / "Visibility for TestPlanet.parquet"
 
     assert star_output.exists()
     assert planet_output.exists()
 
-    # Verify star visibility CSV was created with correct structure
-    star_df = pd.read_csv(star_output)
+    # Verify star visibility Parquet was created with correct structure
+    star_df = pd.read_parquet(star_output)
     assert not star_df.empty
     expected_cols = {"Time(MJD_UTC)", "Time_UTC", "SAA_Crossing", "Visible", "Earth_Sep", "Moon_Sep", "Sun_Sep"}
     assert set(star_df.columns) == expected_cols
 
-    star_visibility = pd.read_csv(star_output)
-    planet_visibility = pd.read_csv(planet_output)
+    star_visibility = pd.read_parquet(star_output)
+    planet_visibility = pd.read_parquet(planet_output)
 
     ephemeris = interpolate_gmat_ephemeris(gmat_path, cadence)
 

@@ -3,14 +3,11 @@ import numpy as np
 import pandas as pd
 import pickle
 from astropy.time import Time
-from astropy.coordinates import SkyCoord
 from datetime import datetime, timedelta
 import logging
 import transits
 from tqdm import tqdm
 import helper_codes
-from multiprocessing import Pool
-from functools import partial
 from typing import Optional
 
 import warnings
@@ -303,7 +300,7 @@ def Schedule(
                     obs_start = overlap_times[0]
 
                     if obs_rng[0] < obs_start:
-                        free = [[f"FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
+                        free = [["FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
                         free = pd.DataFrame(free, columns=["Target", "Observation Start", "Observation Stop"])
                         sched_df = pd.concat([sched_df, free], axis=0).reset_index(drop=True)
                     
@@ -347,7 +344,7 @@ def Schedule(
                         tf_warning += f"Warning: {planet_name} has MTRM > 1 and is transiting during ToO. "
 
                 if obs_rng[0] < obs_start:
-                    free = [[f"FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
+                    free = [["FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
                     free = pd.DataFrame(free, columns=["Target", "Observation Start", "Observation Stop"])
                     sched_df = pd.concat([sched_df, free], axis=0).reset_index(drop=True)
 

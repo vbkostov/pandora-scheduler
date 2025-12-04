@@ -29,8 +29,13 @@ class TestDatetimeColumnGeneration:
         n_points = 10
         mjd_values = np.linspace(60365.0, 60365.1, n_points)
         
+        # Pre-compute datetime array (as done in _build_base_payload)
+        time_utc = Time(mjd_values, format="mjd", scale="utc")
+        datetime_utc = time_utc.to_datetime()
+        
         payload = {
             "Time(MJD_UTC)": mjd_values,
+            "Time_UTC": datetime_utc,  # Pre-computed datetime array
             "SAA_Crossing": np.zeros(n_points),
             "sun_pc": SkyCoord(ra=np.full(n_points, 100) * u.deg,
                               dec=np.zeros(n_points) * u.deg),

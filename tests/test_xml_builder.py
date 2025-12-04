@@ -17,8 +17,8 @@ from pandorascheduler_rework.xml import observation_sequence
 def _write_visibility(directory: Path, name: str, times: list[datetime], flags: list[int]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     mjd_times = Time(times, scale="utc").to_value("mjd")
-    pd.DataFrame({"Time(MJD_UTC)": mjd_times, "Visible": flags}).to_csv(
-        directory / f"Visibility for {name}.csv", index=False
+    pd.DataFrame({"Time(MJD_UTC)": mjd_times, "Visible": flags}).to_parquet(
+        directory / f"Visibility for {name}.parquet", index=False
     )
 
 
@@ -33,7 +33,7 @@ def _write_planet_visibility(directory: Path, name: str, start: datetime, stop: 
             "Transit_Coverage": [0.75],
             "SAA_Overlap": [0.1],
         }
-    ).to_csv(directory / f"Visibility for {name}.csv", index=False)
+    ).to_parquet(directory / f"Visibility for {name}.parquet", index=False)
 
 
 def test_generate_science_calendar_with_occultation(tmp_path, monkeypatch):
@@ -110,7 +110,6 @@ def test_generate_science_calendar_with_occultation(tmp_path, monkeypatch):
     schedule_path = tmp_path / "schedule.csv"
     schedule_df.to_csv(schedule_path, index=False)
 
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
 
     inputs = science_calendar.ScienceCalendarInputs(schedule_csv=schedule_path, data_dir=data_dir)
     config = PandoraSchedulerConfig(
@@ -194,7 +193,7 @@ def test_generate_science_calendar_splits_long_occultations(tmp_path, monkeypatc
     for star in ["OccA", "OccB"]:
         vis_dir = data_dir / "aux_targets" / star
         vis_dir.mkdir(parents=True, exist_ok=True)
-        (vis_dir / f"Visibility for {star}.csv").write_text("Time(MJD_UTC),Visible\n61041.0,1\n61043.0,1\n")
+        pd.DataFrame({"Time(MJD_UTC)": [61041.0, 61043.0], "Visible": [1, 1]}).to_parquet(vis_dir / f"Visibility for {star}.parquet", index=False)
 
     pd.DataFrame(
         [
@@ -227,7 +226,6 @@ def test_generate_science_calendar_splits_long_occultations(tmp_path, monkeypatc
     schedule_path = tmp_path / "schedule_long_occ.csv"
     schedule_df.to_csv(schedule_path, index=False)
 
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
 
     inputs = science_calendar.ScienceCalendarInputs(schedule_csv=schedule_path, data_dir=data_dir)
     config = PandoraSchedulerConfig(
@@ -339,7 +337,6 @@ def test_visit_id_formatting_matches_legacy_quirk(tmp_path, monkeypatch):
     schedule_path = tmp_path / "schedule.csv"
     schedule_df.to_csv(schedule_path, index=False)
 
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
 
     inputs = science_calendar.ScienceCalendarInputs(schedule_csv=schedule_path, data_dir=data_dir)
     config = PandoraSchedulerConfig(
@@ -382,7 +379,6 @@ def test_generate_calendar_empty_schedule(tmp_path, monkeypatch):
         data_dir / "exoplanet_targets.csv", index=False
     )
     
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
     
     config = PandoraSchedulerConfig(
         window_start=datetime(2026, 1, 1),
@@ -435,7 +431,6 @@ def test_calendar_missing_planet_visibility(tmp_path, monkeypatch):
     
     # DON'T create visibility file
     
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
     
     config = PandoraSchedulerConfig(
         window_start=datetime(2026, 1, 1),
@@ -495,7 +490,6 @@ def test_calendar_sequences_below_minimum(tmp_path, monkeypatch):
         data_dir / "occultation-standard_targets.csv", index=False
     )
     
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
     
     config = PandoraSchedulerConfig(
         window_start=start,
@@ -581,7 +575,6 @@ def test_datetime_rounding_to_nearest_second(tmp_path, monkeypatch):
         data_dir / "occultation-standard_targets.csv", index=False
     )
     
-    monkeypatch.setattr(observation_utils, "DATA_ROOTS", [data_dir])
     
     config = PandoraSchedulerConfig(
         window_start=start_with_micros.replace(microsecond=0),

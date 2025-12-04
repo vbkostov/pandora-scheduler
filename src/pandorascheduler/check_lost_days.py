@@ -6,7 +6,7 @@ Created on Fri Aug  4 08:58:02 2023
 @author: paul
 """
 import scheduler
-from datetime import datetime, timedelta
+from datetime import timedelta
 import numpy as np
 import pandas as pd
 import os

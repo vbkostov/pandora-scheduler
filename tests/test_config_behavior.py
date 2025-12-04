@@ -111,14 +111,14 @@ class TestVisibilityParameterBehavior:
         # Read visibility results
         vis_lenient_path = (
             tmp_path / "lenient" / "data" / "targets" / "TestStar" /
-            "Visibility for TestStar.csv"
+            "Visibility for TestStar.parquet"
         )
         vis_strict_path = (
             tmp_path / "strict" / "data" / "targets" / "TestStar" /
-            "Visibility for TestStar.csv"
+            "Visibility for TestStar.parquet"
         )
-        vis_lenient = pd.read_csv(vis_lenient_path)
-        vis_strict = pd.read_csv(vis_strict_path)
+        vis_lenient = pd.read_parquet(vis_lenient_path)
+        vis_strict = pd.read_parquet(vis_strict_path)
 
         # Basic schema checks to avoid silent format regressions
         assert "Visible" in vis_lenient.columns, "Expected 'Visible' column in lenient visibility output"
@@ -180,7 +180,7 @@ class TestVisibilityParameterBehavior:
             output_subpath="targets",
         )
         
-        vis_file = output_dir / "data" / "targets" / "TestStar" / "Visibility for TestStar.csv"
+        vis_file = output_dir / "data" / "targets" / "TestStar" / "Visibility for TestStar.parquet"
         assert vis_file.exists()
 
         # Use content hashing rather than mtime to detect regeneration reliably
