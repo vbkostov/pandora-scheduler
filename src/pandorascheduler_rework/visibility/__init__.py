@@ -6,11 +6,4 @@ be fleshed out incrementally; keep an eye on `docs/visibility-plan.md` for the
 latest roadmap.
 """
 
-from .config import VisibilityConfig  # noqa: F401
 from .catalog import build_visibility_catalog  # noqa: F401
-from .diff import (
-	ComparisonSummary,
-	FileComparison,
-	compare_and_print,
-	compare_visibility_trees,
-)  # noqa: F401

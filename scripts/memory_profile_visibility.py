@@ -26,7 +26,7 @@ def analyze_visibility_files(data_dir: Path):
                 continue
             
             # Star visibility file
-            star_vis = star_dir / f"Visibility for {star_dir.name}.csv"
+            star_vis = star_dir / f"Visibility for {star_dir.name}.parquet"
             if star_vis.exists():
                 size = star_vis.stat().st_size
                 results['target_visibility'].append({
@@ -39,7 +39,7 @@ def analyze_visibility_files(data_dir: Path):
             for planet_dir in star_dir.iterdir():
                 if not planet_dir.is_dir():
                     continue
-                planet_vis = planet_dir / f"Visibility for {planet_dir.name}.csv"
+                planet_vis = planet_dir / f"Visibility for {planet_dir.name}.parquet"
                 if planet_vis.exists():
                     size = planet_vis.stat().st_size
                     results['planet_visibility'].append({
@@ -54,7 +54,7 @@ def analyze_visibility_files(data_dir: Path):
         for star_dir in aux_dir.iterdir():
             if not star_dir.is_dir():
                 continue
-            star_vis = star_dir / f"Visibility for {star_dir.name}.csv"
+            star_vis = star_dir / f"Visibility for {star_dir.name}.parquet"
             if star_vis.exists():
                 size = star_vis.stat().st_size
                 results['aux_visibility'].append({
@@ -97,7 +97,7 @@ def estimate_memory_usage(results):
     print("\n" + "=" * 80)
     print("MEMORY ESTIMATION")
     print("=" * 80)
-    print(f"Total CSV size on disk: {total_size_mb:.2f} MB")
+    print(f"Total Parquet size on disk: {total_size_mb:.2f} MB")
     print(f"Estimated memory if all cached: {total_size_mb * overhead_multiplier:.2f} MB")
     print(f"  (using {overhead_multiplier}x multiplier for DataFrame overhead)")
     
@@ -113,11 +113,11 @@ def estimate_memory_usage(results):
         print(f"   Recommended: Unlimited caching (or set maxsize={sum(len(f) for f in results.values())})")
     elif estimated_mem < 2000:  # Less than 2 GB
         print("⚠️  MODERATE: Memory usage is acceptable but should be limited.")
-        print(f"   Recommended: Set maxsize=256 to limit cache")
+        print("   Recommended: Set maxsize=256 to limit cache")
     else:  # > 2 GB
         print("❌ HIGH: Memory usage could be problematic.")
-        print(f"   Recommended: Set maxsize=128 or use LRU eviction")
-        print(f"   Consider: Lazy loading or streaming for large files")
+        print("   Recommended: Set maxsize=128 or use LRU eviction")
+        print("   Consider: Lazy loading or streaming for large files")
     
     print()
 
@@ -135,7 +135,7 @@ def sample_load_test(data_dir: Path, num_samples=5):
         for star_dir in list(targets_dir.iterdir())[:num_samples]:
             if not star_dir.is_dir():
                 continue
-            star_vis = star_dir / f"Visibility for {star_dir.name}.csv"
+            star_vis = star_dir / f"Visibility for {star_dir.name}.parquet"
             if star_vis.exists():
                 sample_files.append(star_vis)
     
@@ -149,7 +149,7 @@ def sample_load_test(data_dir: Path, num_samples=5):
         file_size_mb = file_path.stat().st_size / (1024 * 1024)
         
         try:
-            df = pd.read_csv(file_path)
+            df = pd.read_parquet(file_path)
             # Rough memory estimate
             mem_usage_mb = df.memory_usage(deep=True).sum() / (1024 * 1024)
             overhead = mem_usage_mb / file_size_mb if file_size_mb > 0 else 0

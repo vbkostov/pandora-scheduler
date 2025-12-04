@@ -4,52 +4,25 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-import pandas as pd
 
 from pandorascheduler_rework import observation_utils as rework_helper
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
-    SchedulerConfig,
     SchedulerInputs,
     SchedulerPaths,
     run_scheduler,
 )
+from pandorascheduler_rework.utils.io import read_csv_cached
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
-from pandorascheduler_rework.visibility.config import VisibilityConfig
-
 
 LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class SchedulerRequest:
-    """User-supplied inputs for a scheduling run.
-
-    The rework aims to accept an explicit manifest of resources rather than
-    relying on implicit directory layouts.  This dataclass keeps the contract
-    small and predictable while allowing higher-level tooling to prepare the
-    inputs however it wishes.
-    """
-
-    targets_manifest: Path
-    """Path to a fingerprint or manifest describing target definitions."""
-
-    window_start: datetime
-    window_end: datetime
-    output_dir: Path
-
-    config: Dict[str, object] = field(default_factory=dict)
-    """Optional tweakable knobs (readout modes, weighting factors, etc.)."""
-
-    extra_inputs: Dict[str, Path] = field(default_factory=dict)
-    """Any additional artifacts the scheduler requires (visibility tiles, TLM).
-
-    The new implementation will ingest these explicitly so the pipeline stays
-    hermetic and easy to test.
-    """
+# SchedulerRequest removed (legacy)
 
 
 @dataclass
@@ -74,107 +47,138 @@ class SchedulerResult:
             yield path
 
 
-def build_schedule(request: SchedulerRequest) -> SchedulerResult:
-    """Run the modern scheduler and persist outputs alongside diagnostics."""
+def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
+    """Run the modern scheduler and persist outputs alongside diagnostics.
 
+    Args:
+        config: Unified configuration object
 
+    Returns:
+        SchedulerResult with paths to generated files
+    """
+    if config.output_dir is None:
+        # Should be caught by config validation or caller, but safe fallback
+        output_dir = Path("output")
+    else:
+        output_dir = config.output_dir
 
-    request.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    legacy_package_dir = Path(__file__).resolve().parents[1] / "pandorascheduler"
-    paths = SchedulerPaths.from_package_root(legacy_package_dir)
+    # Filesystem layout for this run. Use the run's `output_dir` as the
+    # package root so generated data lives under `<output_dir>/data` which
+    # matches the expectations of downstream components.
+    paths = SchedulerPaths.from_package_root(output_dir)
 
-    pandora_start = _coerce_datetime(
-        request.config.get("pandora_start"),
-        request.window_start,
-    )
-    pandora_stop = _coerce_datetime(
-        request.config.get("pandora_stop"),
-        request.window_end,
-    )
+    # Prepare extra_inputs
+    extra_inputs = config.extra_inputs
 
-    tracker_pickle_override = _coerce_optional_path(
-        request.extra_inputs.get("tracker_pickle")
-    )
+    # When generating target manifests from a provided target definition base,
+    # write the generated CSV manifests into the run's output data directory so
+    # subsequent steps (visibility & calendar generation) can find them there.
+    out_data = output_dir / "data"
 
+    # We need to resolve these paths now to pass to target manifest generation
+    # IMPORTANT: Use absolute paths to avoid legacy folder lookups
     primary_target_csv = _coerce_path(
-        request.extra_inputs.get("primary_target_csv"),
-        paths.data_dir / "exoplanet_targets.csv",
-    )
+        extra_inputs.get("primary_target_csv"),
+        out_data / "exoplanet_targets.csv",
+    ).resolve()
     auxiliary_target_csv = _coerce_path(
-        request.extra_inputs.get("auxiliary_target_csv"),
-        paths.data_dir / "auxiliary-standard_targets.csv",
-    )
+        extra_inputs.get("auxiliary_target_csv"),
+        out_data / "auxiliary-standard_targets.csv",
+    ).resolve()
     monitoring_target_csv = _coerce_path(
-        request.extra_inputs.get("monitoring_target_csv"),
-        paths.data_dir / "monitoring-standard_targets.csv",
-    )
+        extra_inputs.get("monitoring_target_csv"),
+        out_data / "monitoring-standard_targets.csv",
+    ).resolve()
     occultation_target_csv = _coerce_path(
-        request.extra_inputs.get("occultation_target_csv"),
-        paths.data_dir / "occultation-standard_targets.csv",
-    )
+        extra_inputs.get("occultation_target_csv"),
+        out_data / "occultation-standard_targets.csv",
+    ).resolve()
 
-    target_definition_files = _resolve_target_definition_files(
-        request.extra_inputs.get("target_definition_files"),
-        [
+    # Handle target definition files if provided
+    target_definition_files_raw = extra_inputs.get("target_definition_files")
+    if target_definition_files_raw:
+        target_definition_files = _resolve_target_definition_files(
+            target_definition_files_raw,
+            [
+                _target_definition_from_csv(primary_target_csv),
+                _target_definition_from_csv(auxiliary_target_csv),
+                _target_definition_from_csv(monitoring_target_csv),
+                _target_definition_from_csv(occultation_target_csv),
+            ],
+        )
+
+        target_definition_base = _coerce_optional_path(
+            extra_inputs.get("target_definition_base")
+        )
+
+        if target_definition_base is not None:
+            # Allow callers to opt-out of regenerating manifests (use existing CSVs)
+            skip_manifests = _as_bool(extra_inputs.get("skip_manifests"), False)
+            if skip_manifests:
+                LOGGER.info(
+                    "Skipping generation of target manifests (skip_manifests=True)"
+                )
+            else:
+                _generate_target_manifests(
+                    target_definition_files,
+                    target_definition_base,
+                    primary_target_csv,
+                    auxiliary_target_csv,
+                    monitoring_target_csv,
+                    occultation_target_csv,
+                )
+    else:
+        # Fallback if not explicitly provided (legacy behavior relied on implicit paths)
+        # But for V2 we prefer explicit. If missing, we assume the CSVs exist.
+        target_definition_files = [
             _target_definition_from_csv(primary_target_csv),
             _target_definition_from_csv(auxiliary_target_csv),
             _target_definition_from_csv(monitoring_target_csv),
             _target_definition_from_csv(occultation_target_csv),
-        ],
-    )
+        ]
 
-    target_definition_base = _coerce_optional_path(
-        request.extra_inputs.get("target_definition_base")
-        or request.config.get("target_definition_base")
-    )
-
-    if target_definition_base is not None:
-        _generate_target_manifests(
-            target_definition_files,
-            target_definition_base,
-            primary_target_csv,
-            auxiliary_target_csv,
-            monitoring_target_csv,
-            occultation_target_csv,
-        )
-
-    if not request.targets_manifest.exists():
+    if config.targets_manifest and not config.targets_manifest.exists():
         raise FileNotFoundError(
-            f"Targets manifest does not exist: {request.targets_manifest}"
+            f"Provided targets_manifest not found: {config.targets_manifest}"
         )
 
     _maybe_generate_visibility(
-        request,
+        config,
         paths,
-        pandora_start,
-        pandora_stop,
+        config.window_start,
+        config.window_end,
         primary_target_csv,
         auxiliary_target_csv,
         monitoring_target_csv,
         occultation_target_csv,
     )
 
-    target_list = pd.read_csv(primary_target_csv)
+    target_list = read_csv_cached(str(primary_target_csv))
+    if target_list is None:
+        raise FileNotFoundError(
+            f"Primary target manifest not found: {primary_target_csv}"
+        )
 
     scheduler_inputs = SchedulerInputs(
-        pandora_start=pandora_start,
-        pandora_stop=pandora_stop,
-        sched_start=request.window_start,
-        sched_stop=request.window_end,
+        pandora_start=config.window_start,
+        pandora_stop=config.window_end,
+        sched_start=config.window_start,
+        sched_stop=config.window_end,
         target_list=target_list,
         paths=paths,
         target_definition_files=target_definition_files,
         primary_target_csv=primary_target_csv,
         auxiliary_target_csv=auxiliary_target_csv,
         occultation_target_csv=occultation_target_csv,
-        output_dir=request.output_dir,
-        tracker_pickle_path=tracker_pickle_override,
+        output_dir=output_dir,
+        tracker_pickle_path=_coerce_optional_path(extra_inputs.get("tracker_pickle")),
     )
 
-    scheduler_config = _build_config(request.config)
+    # scheduler_config = config.to_scheduler_config() (Removed)
 
-    outputs = run_scheduler(scheduler_inputs, scheduler_config)
+    outputs = run_scheduler(scheduler_inputs, config)
 
     reports: Dict[str, Path] = {}
     if outputs.observation_report_path is not None:
@@ -197,7 +201,7 @@ def build_schedule(request: SchedulerRequest) -> SchedulerResult:
 
 
 def _maybe_generate_visibility(
-    request: SchedulerRequest,
+    config: PandoraSchedulerConfig,
     paths: SchedulerPaths,
     pandora_start: datetime,
     pandora_stop: datetime,
@@ -206,60 +210,79 @@ def _maybe_generate_visibility(
     monitoring_target_csv: Path,
     occultation_target_csv: Path,
 ) -> None:
-    if not _as_bool(request.config.get("generate_visibility"), False):
+    # Determine whether we should generate visibility.
+    # Default: True when a GMAT ephemeris is provided, or when explicitly requested.
+    generate_visibility = bool(config.gmat_ephemeris) or bool(
+        str(config.extra_inputs.get("generate_visibility", "")).lower()
+        in {"1", "true", "yes", "y"}
+    )
+
+    if not generate_visibility:
         return
 
     # 1. Primary Targets -> data/targets
-    primary_config = _build_visibility_config(
-        request,
-        paths,
-        pandora_start,
-        pandora_stop,
+    LOGGER.info(
+        "Generating visibility for Primary Targets in %s",
+        (
+            config.output_dir / "data" / "targets"
+            if config.output_dir
+            else "output/data/targets"
+        ),
+    )
+    build_visibility_catalog(
+        config,
         target_list=primary_target_csv,
         partner_list=auxiliary_target_csv,
         output_subpath="targets",
     )
-    LOGGER.info("Generating visibility for Primary Targets in %s", primary_config.output_root)
-    build_visibility_catalog(primary_config)
 
     # 2. Auxiliary Targets -> data/aux_targets
-    aux_config = _build_visibility_config(
-        request,
-        paths,
-        pandora_start,
-        pandora_stop,
+    LOGGER.info(
+        "Generating visibility for Auxiliary Targets in %s",
+        (
+            config.output_dir / "data" / "aux_targets"
+            if config.output_dir
+            else "output/data/aux_targets"
+        ),
+    )
+    build_visibility_catalog(
+        config,
         target_list=auxiliary_target_csv,
         partner_list=None,
         output_subpath="aux_targets",
     )
-    LOGGER.info("Generating visibility for Auxiliary Targets in %s", aux_config.output_root)
-    build_visibility_catalog(aux_config)
 
     # 3. Monitoring Targets -> data/aux_targets
-    mon_config = _build_visibility_config(
-        request,
-        paths,
-        pandora_start,
-        pandora_stop,
+    LOGGER.info(
+        "Generating visibility for Monitoring Targets in %s",
+        (
+            config.output_dir / "data" / "aux_targets"
+            if config.output_dir
+            else "output/data/aux_targets"
+        ),
+    )
+    build_visibility_catalog(
+        config,
         target_list=monitoring_target_csv,
         partner_list=None,
         output_subpath="aux_targets",
     )
-    LOGGER.info("Generating visibility for Monitoring Targets in %s", mon_config.output_root)
-    build_visibility_catalog(mon_config)
 
     # 3. Occultation Targets -> data/aux_targets
-    occ_config = _build_visibility_config(
-        request,
-        paths,
-        pandora_start,
-        pandora_stop,
+    LOGGER.info(
+        "Generating visibility for Occultation Targets in %s",
+        (
+            config.output_dir / "data" / "aux_targets"
+            if config.output_dir
+            else "output/data/aux_targets"
+        ),
+    )
+    build_visibility_catalog(
+        config,
         target_list=occultation_target_csv,
         partner_list=None,
         output_subpath="aux_targets",
     )
-    LOGGER.info("Generating visibility for Occultation Targets in %s", occ_config.output_root)
-    build_visibility_catalog(occ_config)
 
 
 def _generate_target_manifests(
@@ -294,126 +317,11 @@ def _generate_target_manifests(
         primary_target_csv.parent.parent,
     )
 
-def _build_visibility_config(
-    request: SchedulerRequest,
-    paths: SchedulerPaths,
-    pandora_start: datetime,
-    pandora_stop: datetime,
-    target_list: Path,
-    partner_list: Optional[Path],
-    output_subpath: str,
-) -> VisibilityConfig:
-    config = request.config
-    extra_inputs = request.extra_inputs
 
-    default_gmat = paths.data_dir / "Pandora-600km-withoutdrag-20251018.txt"
-
-    gmat_path = extra_inputs.get("visibility_gmat") or _coerce_path(
-        config.get("visibility_gmat"),
-        default_gmat,
-    )
-
-    target_list_path = extra_inputs.get("visibility_target_list") or _coerce_path(
-        config.get("visibility_target_list"),
-        target_list,
-    )
-
-    partner_override = extra_inputs.get("visibility_partner_list")
-    partner_value = config.get("visibility_partner_list")
-
-    if partner_override is not None:
-        partner_list = partner_override
-    elif partner_value is not None:
-        if isinstance(partner_value, bool) and not partner_value:
-            partner_list = None
-        elif isinstance(partner_value, str) and not partner_value.strip():
-            partner_list = None
-        else:
-            default_partner = partner_list if partner_list is not None else (paths.data_dir / "auxiliary-standard_targets.csv")
-            partner_list = _coerce_path(partner_value, default_partner)
-    # else: use the passed partner_list argument as-is
-
-    output_override = extra_inputs.get("visibility_output_root")
-    if output_override is not None:
-        output_root = output_override
-    else:
-        config_root = _coerce_optional_path(config.get("visibility_output_root"))
-        if config_root is not None:
-            output_root = config_root
-        else:
-            # Use request output dir + subpath
-            output_root = request.output_dir / "data" / output_subpath
-
-    sun_value = config.get("visibility_sun_deg")
-    if sun_value is None:
-        sun_value = config.get("sun_avoidance_deg")
-    sun_deg = _as_float(sun_value, 91.0)
-
-    moon_value = config.get("visibility_moon_deg")
-    if moon_value is None:
-        moon_value = config.get("moon_avoidance_deg")
-    moon_deg = _as_float(moon_value, 25.0)
-
-    earth_value = config.get("visibility_earth_deg")
-    if earth_value is None:
-        earth_value = config.get("earth_avoidance_deg")
-    earth_deg = _as_float(earth_value, 86.0)
-
-    force_flag = _as_bool(config.get("visibility_force"), False)
-    target_filters = _coerce_target_filters(config.get("visibility_target_filters"))
-
-    return VisibilityConfig(
-        window_start=pandora_start,
-        window_end=pandora_stop,
-        gmat_ephemeris=gmat_path,
-        target_list=target_list_path,
-        partner_list=partner_list,
-        output_root=output_root,
-        sun_avoidance_deg=sun_deg,
-        moon_avoidance_deg=moon_deg,
-        earth_avoidance_deg=earth_deg,
-        force=force_flag,
-        target_filters=target_filters,
-    )
+# _build_visibility_config removed (legacy)
 
 
-def _build_config(values: Dict[str, object]) -> SchedulerConfig:
-    obs_window_hours = _as_float(values.get("obs_window_hours"), 24.0)
-    transit_coverage_min = _as_float(values.get("transit_coverage_min"), 0.4)
-    sched_weights_raw = values.get("sched_weights")
-    if sched_weights_raw is None:
-        sched_weights_raw = (0.8, 0.0, 0.2)
-    sched_weights = _coerce_sched_weights(sched_weights_raw)
-    min_visibility = _as_float(values.get("min_visibility"), 0.5)
-    deprioritization_limit_hours = _as_float(
-        values.get("deprioritization_limit_hours"), 48.0
-    )
-    commissioning_days = _as_int(values.get("commissioning_days"), 0)
-    aux_key_value = values.get("aux_key", "sort_by_tdf_priority")
-    show_progress = _as_bool(values.get("show_progress"), False)
-    std_obs_duration_hours = _as_float(values.get("std_obs_duration_hours"), 0.5)
-    std_obs_frequency_days = _as_float(values.get("std_obs_frequency_days"), 3.0)
-    if isinstance(aux_key_value, str) and aux_key_value.lower() == "none":
-        aux_key = None
-    elif aux_key_value is None:
-        aux_key = None
-    elif isinstance(aux_key_value, str):
-        aux_key = aux_key_value
-    else:
-        raise TypeError("aux_key must be a string or None")
-
-    return SchedulerConfig(
-        obs_window=timedelta(hours=obs_window_hours),
-        transit_coverage_min=transit_coverage_min,
-        sched_weights=sched_weights,
-        min_visibility=min_visibility,
-        deprioritization_limit_hours=deprioritization_limit_hours,
-        commissioning_days=commissioning_days,
-        aux_key=aux_key,
-        show_progress=show_progress,
-        std_obs_duration_hours=std_obs_duration_hours,
-        std_obs_frequency_days=std_obs_frequency_days,
-    )
+# _build_config removed (legacy)
 
 
 def _coerce_datetime(value: object, default: datetime) -> datetime:
@@ -459,7 +367,7 @@ def _target_definition_from_csv(path: Path) -> str:
     return stem
 
 
-def _coerce_sched_weights(value: object) -> tuple[float, float, float]:
+def _coerce_transit_scheduling_weights(value: object) -> tuple[float, float, float]:
     components: List[object]
     if isinstance(value, str):
         components = [
@@ -473,13 +381,16 @@ def _coerce_sched_weights(value: object) -> tuple[float, float, float]:
         components = [value]
 
     if not components:
-        raise ValueError("sched_weights must provide three numeric components")
+        raise ValueError(
+            "transit_scheduling_weights must provide three numeric components"
+        )
 
     weights = tuple(_as_float(component, 0.0) for component in components)
 
     if len(weights) != 3:
         raise ValueError(
-            "sched_weights must contain exactly three values (coverage, saa, schedule)."
+            "transit_scheduling_weights must contain exactly three values "
+            "(coverage, saa, schedule)."
         )
     return (weights[0], weights[1], weights[2])
 

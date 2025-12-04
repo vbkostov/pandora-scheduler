@@ -93,7 +93,7 @@ def compare_xmls(legacy_path, rework_path):
         if id_elem is not None:
             rework_visits[id_elem.text] = extract_visit_data(v)
     
-    print(f"\n2. VISIT COUNT")
+    print("\n2. VISIT COUNT")
     print("-" * 100)
     print(f"  Legacy: {len(legacy_visits)} visits")
     print(f"  Rework: {len(rework_visits)} visits")
@@ -150,7 +150,7 @@ def compare_xmls(legacy_path, rework_path):
                                 diff_categories['coordinates'].append(
                                     f"Visit {visit_id}, Seq {i}, {key}: Legacy={legacy_val}, Rework={rework_val}, Diff={diff:.6f}"
                                 )
-                        except:
+                        except (TypeError, ValueError):
                             diff_categories['coordinates'].append(
                                 f"Visit {visit_id}, Seq {i}, {key}: Legacy={legacy_val}, Rework={rework_val}"
                             )
@@ -187,6 +187,6 @@ def compare_xmls(legacy_path, rework_path):
 
 if __name__ == "__main__":
     legacy_xml = Path("src/pandorascheduler/data/Pandora_science_calendar.xml")
-    rework_xml = Path("output_standalone/Pandora_science_calendar.xml")
+    rework_xml = Path("output_standalone/data/Pandora_science_calendar.xml")
     
     compare_xmls(legacy_xml, rework_xml)

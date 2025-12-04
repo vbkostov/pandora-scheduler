@@ -6,14 +6,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from astropy import units as u
-from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-from pandorascheduler_rework.visibility import diff as diff_module
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
-from pandorascheduler_rework.visibility.config import VisibilityConfig
-from pandorascheduler_rework.visibility.diff import ComparisonSummary, compare_visibility_trees
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.visibility.geometry import (
     build_minute_cadence,
     compute_saa_crossings,
@@ -33,7 +29,22 @@ def _to_gmat_mod_julian(times: Time) -> np.ndarray:
     return mjd - 29999.5
 
 
-def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
+@pytest.fixture
+def mock_config(tmp_path):
+    return PandoraSchedulerConfig(
+        window_start=datetime(2025, 2, 5),
+        window_end=datetime(2025, 2, 5, 6, 0, 0),
+        gmat_ephemeris=tmp_path / "gmat.csv",
+        targets_manifest=tmp_path / "targets.csv",
+        output_dir=tmp_path / "output",
+        force_regenerate=True,
+        sun_avoidance_deg=45.0,
+        moon_avoidance_deg=30.0,
+        earth_avoidance_deg=20.0,
+    )
+
+
+def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path, mock_config):
     window_start = datetime(2025, 2, 5, 0, 0, 0)
     window_end = window_start + timedelta(hours=6)
 
@@ -77,8 +88,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
     period_minutes = 30.0
     period_days = period_minutes / (24.0 * 60.0)
     epoch_time = Time(window_start - timedelta(minutes=150), scale="tdb", format="datetime")
-    # Ensure scalar numeric JD even if astropy returns a masked/array type
-    epoch_bjd_tdb = float(np.asarray(epoch_time.jd))
+    epoch_bjd_tdb = float(epoch_time.jd)
 
     target_df = pd.DataFrame(
         {
@@ -93,34 +103,30 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
             "Transit Epoch (BJD_TDB-2400000.5)": [epoch_bjd_tdb - 2400000.5],
         }
     )
-    target_path = tmp_path / "target_list.csv"
+    target_path = mock_config.targets_manifest
     target_df.to_csv(target_path, index=False)
 
-    output_root = tmp_path / "visibility_outputs"
-
-    config = VisibilityConfig(
-        window_start=window_start,
-        window_end=window_end,
-        gmat_ephemeris=gmat_path,
-        target_list=target_path,
-        partner_list=None,
-        output_root=output_root,
-        sun_avoidance_deg=45.0,
-        moon_avoidance_deg=30.0,
-        earth_avoidance_deg=20.0,
-        force=True,
+    build_visibility_catalog(
+        mock_config,
+        target_list=mock_config.targets_manifest,
+        output_subpath="targets"
     )
 
-    build_visibility_catalog(config)
-
-    star_output = output_root / "TestStar" / "Visibility for TestStar.csv"
-    planet_output = output_root / "TestStar" / "TestPlanet" / "Visibility for TestPlanet.csv"
+    output_root = mock_config.output_dir / "data" / "targets"
+    star_output = output_root / "TestStar" / "Visibility for TestStar.parquet"
+    planet_output = output_root / "TestStar" / "TestPlanet" / "Visibility for TestPlanet.parquet"
 
     assert star_output.exists()
     assert planet_output.exists()
 
-    star_visibility = pd.read_csv(star_output)
-    planet_visibility = pd.read_csv(planet_output)
+    # Verify star visibility Parquet was created with correct structure
+    star_df = pd.read_parquet(star_output)
+    assert not star_df.empty
+    expected_cols = {"Time(MJD_UTC)", "Time_UTC", "SAA_Crossing", "Visible", "Earth_Sep", "Moon_Sep", "Sun_Sep"}
+    assert set(star_df.columns) == expected_cols
+
+    star_visibility = pd.read_parquet(star_output)
+    planet_visibility = pd.read_parquet(planet_output)
 
     ephemeris = interpolate_gmat_ephemeris(gmat_path, cadence)
 
@@ -149,6 +155,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
     expected_star = pd.DataFrame(
         {
             "Time(MJD_UTC)": np.round(cadence.mjd_utc, 6),
+            "Time_UTC": Time(cadence.mjd_utc, format="mjd", scale="utc").to_datetime(),
             "SAA_Crossing": saa_crossing,
             "Visible": visible,
             "Earth_Sep": earth_sep,
@@ -157,12 +164,10 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
         }
     )
 
-    # Compare columns and numeric values with tolerance rather than strict equality
-    assert list(star_visibility.columns) == list(expected_star.columns)
-    for col in expected_star.columns:
-        exp_vals = np.asarray(expected_star[col], dtype=float)
-        got_vals = np.asarray(star_visibility[col].to_numpy(), dtype=float)
-        assert np.allclose(got_vals, exp_vals, atol=1e-6, equal_nan=True)
+    # Drop Time_UTC for comparison since datetime conversion may have microsecond differences
+    star_visibility_compare = star_visibility.drop(columns=["Time_UTC"])
+    expected_star_compare = expected_star.drop(columns=["Time_UTC"])
+    pd.testing.assert_frame_equal(star_visibility_compare, expected_star_compare)
 
     assert not planet_visibility.empty
     np.testing.assert_array_equal(
@@ -176,9 +181,7 @@ def test_build_visibility_catalog_generates_star_and_planet_outputs(tmp_path):
 
     star_time = Time(star_time_mjd, format="mjd", scale="utc")
     star_time_iso = Time(star_time.iso, format="iso", scale="utc")
-    # Normalize to python datetimes to avoid masked/np.datetime64 issues
-    raw_datetimes = star_time_iso.to_value("datetime")
-    star_datetimes = [pd.to_datetime(dt).to_pydatetime() for dt in np.asarray(raw_datetimes)]
+    star_datetimes = star_time_iso.to_value("datetime")
 
     visible_times = {
         dt for dt, flag in zip(star_datetimes, star_visible) if flag == 1.0
@@ -271,105 +274,4 @@ def _write_csv(path: Path, content: str) -> None:
     path.write_text(content)
 
 
-def test_compare_visibility_trees_detects_mismatches(tmp_path):
-    legacy_root = tmp_path / "legacy"
-    rework_root = tmp_path / "rework"
 
-    legacy_star = legacy_root / "Star" / "Visibility for Star.csv"
-    rework_star = rework_root / "Star" / "Visibility for Star.csv"
-
-    legacy_planet = legacy_root / "Star" / "Planet" / "Visibility for Planet.csv"
-    rework_planet = rework_root / "Star" / "Planet" / "Visibility for Planet.csv"
-
-    _write_csv(
-        legacy_star,
-        "Time(MJD_UTC),SAA_Crossing,Visible,Earth_Sep\n"
-        "1,0,1,90\n"
-        "2,1,0,91\n",
-    )
-    _write_csv(
-        rework_star,
-        "Time(MJD_UTC),SAA_Crossing,Visible,Earth_Sep\n"
-        "1,0,1,90.001\n"
-        "2,1,1,91.002\n",
-    )
-
-    _write_csv(
-        legacy_planet,
-        "Transits,Transit_Start,Transit_Stop,Transit_Coverage,SAA_Overlap\n"
-        "0,1,2,0.5,0.0\n",
-    )
-    _write_csv(
-        rework_planet,
-        "Transits,Transit_Start,Transit_Stop,Transit_Coverage,Transit_Overlap,SAA_Overlap\n"
-        "0,1,2,0.6,0.0,0.1\n",
-    )
-
-    summary = compare_visibility_trees(legacy_root, rework_root, atol=1e-4)
-
-    assert isinstance(summary, ComparisonSummary)
-    assert len(summary.missing_in_legacy) == 0
-    assert len(summary.missing_in_rework) == 0
-
-    differing = {result.path: result for result in summary.differing_files}
-    assert Path("Star/Visibility for Star.csv") in differing
-    assert differing[Path("Star/Visibility for Star.csv")].visible_mismatches == 1
-    assert differing[Path("Star/Visibility for Star.csv")].numeric_deltas["Earth_Sep"] == pytest.approx(0.002)
-
-    assert Path("Star/Planet/Visibility for Planet.csv") in differing
-    planet_result = differing[Path("Star/Planet/Visibility for Planet.csv")]
-    assert planet_result.extra_columns_rework == ("Transit_Overlap",)
-    assert planet_result.numeric_deltas["Transit_Coverage"] == pytest.approx(0.1)
-    assert planet_result.numeric_deltas["SAA_Overlap"] == pytest.approx(0.1)
-
-
-def test_compare_and_print_returns_nonzero_for_differences(tmp_path, monkeypatch):
-    legacy_root = tmp_path / "legacy"
-    rework_root = tmp_path / "rework"
-
-    _write_csv(
-        legacy_root / "file.csv",
-        "Visible\n0\n",
-    )
-    _write_csv(
-        rework_root / "file.csv",
-        "Visible\n1\n",
-    )
-
-    captured = []
-
-    def fake_print(message: str) -> None:
-        captured.append(message)
-
-    monkeypatch.setattr(diff_module, "print", fake_print, raising=False)
-
-    summary = diff_module.compare_and_print(legacy_root, rework_root)
-
-    assert summary.identical is False
-    assert any("Total differing files: 1" in line for line in captured)
-
-
-def test_compare_and_print_returns_zero_for_matches(tmp_path, monkeypatch):
-    legacy_root = tmp_path / "legacy"
-    rework_root = tmp_path / "rework"
-
-    _write_csv(
-        legacy_root / "file.csv",
-        "Visible\n1\n",
-    )
-    _write_csv(
-        rework_root / "file.csv",
-        "Visible\n1\n",
-    )
-
-    captured = []
-
-    def fake_print(message: str) -> None:
-        captured.append(message)
-
-    monkeypatch.setattr(diff_module, "print", fake_print, raising=False)
-
-    summary = diff_module.compare_and_print(legacy_root, rework_root)
-
-    assert summary.identical is True
-    assert any("Total differing files: 0" in line for line in captured)

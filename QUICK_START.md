@@ -189,6 +189,10 @@ poetry run python run_scheduler.py \
     --config config.json
 ```
 
+A ready-made example config is provided at the repository root: `example_scheduler_config.json`.
+For a full key reference see `docs/EXAMPLE_SCHEDULER_CONFIG.md`.
+
+
 #### Visibility Generation
 
 If you need to regenerate visibility catalogs from target definitions:

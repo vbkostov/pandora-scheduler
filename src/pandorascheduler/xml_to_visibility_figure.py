@@ -36,4 +36,4 @@ targs = np.unique(np.asarray(df.index))
 for idx, targ in enumerate(targs):
     z = np.asarray([df.loc[targ].start, df.loc[targ].stop]).T
     ax.plot(z.T, z.T**0 * idx, c='k')
-ax.set(xlabel='Time [JD]', yticks=np.arange(0, len(targs)), yticklabels=targs, title='Pandora Calendar');
+ax.set(xlabel='Time [JD]', yticks=np.arange(0, len(targs)), yticklabels=targs, title='Pandora Calendar')

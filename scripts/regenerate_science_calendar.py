@@ -1,46 +1,49 @@
 import logging
-import pandas as pd
 from pathlib import Path
 import sys
+from datetime import datetime
 from pandorascheduler_rework import science_calendar
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 
-def regenerate_calendar(output_dir_str: str):
+def regenerate_calendar(output_dir_str: str, use_legacy_mode: bool = False):
     output_dir = Path(output_dir_str).resolve()
     # Find the schedule CSV
     schedule_csv = list(output_dir.glob("Pandora_Schedule_*.csv"))[0]
     data_dir = output_dir / "data"
     
-    print(f"Regenerating Science Calendar...")
+    print("Regenerating Science Calendar...")
     print(f"  Schedule: {schedule_csv}")
     print(f"  Data Dir: {data_dir}")
     print(f"  Output:   {output_dir}")
+    print(f"  Legacy mode: {use_legacy_mode}")
 
     if not data_dir.exists():
         print(f"ERROR: Data directory not found at {data_dir}")
         sys.exit(1)
 
     logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("regenerate")
 
     inputs = science_calendar.ScienceCalendarInputs(
         schedule_csv=schedule_csv,
         data_dir=data_dir,
     )
 
-    config = science_calendar.ScienceCalendarConfig(
-        visit_limit=None,  # Generate all visits
-        prioritise_occultations_by_slew=False,
-        author="Pandora Scheduler",
+    # Dummy dates - XML generation extracts dates from the schedule CSV
+    config = PandoraSchedulerConfig(
+        window_start=datetime(2026, 1, 1),
+        window_end=datetime(2027, 1, 1),
+        use_legacy_mode=use_legacy_mode,
     )
 
-    output_path = output_dir / "Pandora_science_calendar.xml"
+    output_path = data_dir / "Pandora_science_calendar.xml"
 
     science_calendar.generate_science_calendar(
         inputs,
-        output_path=output_path,
         config=config,
+        output_path=output_path,
     )
     print(f"SUCCESS: Generated {output_path}")
 
 if __name__ == "__main__":
-    regenerate_calendar("output_standalone")
+    use_legacy = "--legacy-mode" in sys.argv or "-l" in sys.argv
+    regenerate_calendar("output_standalone", use_legacy_mode=use_legacy)

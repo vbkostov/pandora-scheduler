@@ -29,7 +29,7 @@ def main():
     for _, row in manifest.iterrows():
         star = row["Star Name"]
         planet = row["Planet Name"]
-        vis_file = targets_dir / star / planet / f"Visibility for {planet}.csv"
+        vis_file = targets_dir / star / planet / f"Visibility for {planet}.parquet"
         
         if not vis_file.exists():
             missing_files.append(str(vis_file))
@@ -37,7 +37,7 @@ def main():
             continue
         
         try:
-            df = pd.read_csv(vis_file)
+            df = pd.read_parquet(vis_file)
         except Exception as e:
             print(f"❌ ERROR reading {planet}: {e}")
             continue

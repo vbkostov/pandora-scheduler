@@ -13,7 +13,6 @@ import logging
 # import barycorr
 from tqdm import tqdm
 # from . import barycorr
-import json
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 
