@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pandorascheduler_rework import science_calendar
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 

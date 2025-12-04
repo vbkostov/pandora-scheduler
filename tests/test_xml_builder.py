@@ -8,7 +8,6 @@ from astropy.time import Time
 import xml.etree.ElementTree as ET
 import pytest
 
-from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework import science_calendar
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.xml import observation_sequence

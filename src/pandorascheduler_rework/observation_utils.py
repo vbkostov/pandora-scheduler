@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, cast

@@ -16,7 +16,6 @@ from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
 from pandorascheduler_rework.utils.io import read_csv_cached, read_parquet_cached
-from pandorascheduler_rework.utils.string_ops import remove_suffix
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 logger = logging.getLogger(__name__)
