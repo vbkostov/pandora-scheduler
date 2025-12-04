@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from pandorascheduler_rework.targets.manifest import (
@@ -21,23 +20,14 @@ DEFAULT_CATEGORIES = (
 
 
 def _resolve_base_dir(explicit: str | None) -> Path:
-    items: list[Path] = []
     if explicit:
-        items.append(Path(explicit))
-    env_value = os.environ.get("PANDORA_TARGET_DEFINITION_BASE")
-    if env_value:
-        items.append(Path(env_value))
-    fallback = Path(__file__).resolve().parents[1] / "comparison_outputs" / "target_definition_files_limited"
-    items.append(fallback)
-
-    for candidate in items:
-        resolved = candidate.expanduser().resolve()
+        resolved = Path(explicit).expanduser().resolve()
         if resolved.is_dir():
             return resolved
+        raise SystemExit(f"Provided --base-dir does not exist: {explicit}")
 
     raise SystemExit(
-        "Unable to locate target_definition_files. Provide --base-dir or set "
-        "PANDORA_TARGET_DEFINITION_BASE."
+        "Unable to locate target_definition_files. Provide --base-dir."
     )
 
 

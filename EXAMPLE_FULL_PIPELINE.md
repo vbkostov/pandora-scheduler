@@ -2,13 +2,6 @@
 
 This example demonstrates running the complete pipeline using `run_scheduler.py`, which is the recommended way to execute the scheduler.
 
-## Setup
-
-```bash
-# Set the target definition base (one-time setup)
-export PANDORA_TARGET_DEFINITION_BASE=/Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-```
-
 ## Run Complete Pipeline
 
 Generate everything from scratch:
@@ -18,29 +11,18 @@ poetry run python run_scheduler.py \
     --start "2026-02-05" \
     --end "2026-02-12" \
     --output ./complete_pipeline_run \
+    --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
     --show-progress \
     --verbose
 ```
 
 This will:
-1. Read target definitions from `$PANDORA_TARGET_DEFINITION_BASE`
+1. Read target definitions from the specified path
 2. Generate `*_targets.csv` manifests in `complete_pipeline_run/data/`
 3. Generate visibility files for all targets
 4. Run the scheduling algorithm
 5. Generate schedule CSV and science calendar XML
-
-## Alternative: Specify Path Directly
-
-```bash
-poetry run python run_scheduler.py \
-    --start "2026-02-05" \
-    --end "2026-02-12" \
-    --output ./complete_pipeline_run \
-    --target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files \
-    --generate-visibility \
-    --show-progress
-```
 
 ## Output Structure
 
@@ -54,10 +36,10 @@ complete_pipeline_run/
 │   ├── targets/                                 # Primary visibility data
 │   │   └── [StarName]/
 │   │       └── [PlanetName]/
-│   │           └── Visibility for [PlanetName].csv
+│   │           └── Visibility for [PlanetName].parquet
 │   └── aux_targets/                             # Auxiliary visibility data
 │       └── [StarName]/
-│           └── Visibility for [StarName].csv
+│           └── Visibility for [StarName].parquet
 ├── Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-02-12.csv
 ├── Pandora_science_calendar.xml
 ├── Observation_Time_Report_2026-02-05 00:00:00.csv
