@@ -25,6 +25,7 @@ poetry run python run_scheduler.py \
     --output ./output \
     --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress
 ```
 

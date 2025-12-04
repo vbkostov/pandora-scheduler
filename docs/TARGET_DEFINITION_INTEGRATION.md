@@ -42,6 +42,7 @@ poetry run python run_scheduler.py \
     --output ./output \
     --target-definitions /path/to/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress
 ```
 Generates: Manifests → Visibility → Schedule → XML
@@ -123,6 +124,7 @@ poetry run python run_scheduler.py \
     --output ./output \
     --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress
 ```
 Generates everything from definitions
@@ -184,7 +186,8 @@ No changes required! The script maintains full backward compatibility.
        --start "2026-02-05" --end "2027-02-05" \
        --output ./output \
        --target-definitions /path/to/PandoraTargetList/target_definition_files \
-       --generate-visibility \
+    --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
        --show-progress
    ```
 3. Subsequent runs can omit `--generate-visibility` to reuse data

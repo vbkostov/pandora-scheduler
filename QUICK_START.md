@@ -19,7 +19,8 @@ poetry run python run_scheduler.py \
     --end "2026-02-12" \
     --output ./output \
     --target-definitions /path/to/PandoraTargetList/target_definition_files \
-    --generate-visibility
+    --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt
 ```
 
 This will:
@@ -61,17 +62,6 @@ output/
 └── Tracker_2026-02-05_to_2026-02-12.pkl
 ```
 
-When using existing manifests (no `--target-definitions`), only schedule/calendar files are created:
-
-```
-output/
-├── Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-02-12.csv
-├── Pandora_science_calendar.xml
-├── Observation_Time_Report_2026-02-05 00:00:00.csv
-├── tracker.csv
-└── Tracker_2026-02-05_to_2026-02-12.pkl
-```
-
 ### Common Workflows
 
 #### Complete Pipeline (Recommended)
@@ -83,6 +73,7 @@ poetry run python run_scheduler.py \
     --output ./full_pipeline_output \
     --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress
 ```
 
@@ -94,7 +85,6 @@ poetry run python run_scheduler.py \
     --end "2026-02-12" \
     --output ./output
 ```
-This uses the existing files in `src/pandorascheduler/data/`.
 
 #### Show Progress Bars
 ```bash
@@ -190,6 +180,7 @@ poetry run python run_scheduler.py \
     --end "2026-02-12" \
     --output ./output \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --sun-avoidance 90.0 \
     --moon-avoidance 30.0 \
     --earth-avoidance 85.0
@@ -234,6 +225,7 @@ poetry run python run_scheduler.py \
     --output ./complete_run \
     --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress \
     --verbose
 ```
@@ -276,8 +268,6 @@ Provide target definitions to generate manifests:
 --target-definitions /path/to/PandoraTargetList/target_definition_files
 ```
 
-Or ensure legacy data directory exists with pre-generated manifests in `src/pandorascheduler/data/`
-
 #### "Target definition directory not found"
 Check that the path to `PandoraTargetList/target_definition_files` is correct. It should contain subdirectories like:
 - `exoplanet/`
@@ -302,13 +292,9 @@ The three schedule weights must sum to exactly 1.0:
 ```
 
 #### Memory Usage
-For long scheduling windows (>30 days), the process may require significant memory. Consider:
-- Running in smaller chunks
-- Using `--skip-xml` to reduce memory usage
-- Closing other applications
+For long scheduling windows (>30 days), the process may require significant memory.
 
 ### Performance
-
 Typical execution times on a modern laptop:
 - 2-day window: ~2-3 minutes
 - 7-day window: ~8-10 minutes

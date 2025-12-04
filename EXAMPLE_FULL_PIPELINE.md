@@ -13,6 +13,7 @@ poetry run python run_scheduler.py \
     --output ./complete_pipeline_run \
     --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
     --show-progress \
     --verbose
 ```
@@ -50,6 +51,5 @@ complete_pipeline_run/
 ## Notes
 
 - The first run with `--generate-visibility` will take longer (visibility generation is compute-intensive)
-- Subsequent runs can reuse the generated visibility files by omitting `--generate-visibility`
 - The `--show-progress` flag shows progress bars for scheduling
 - Use `--verbose` to see detailed logging including visibility generation status
