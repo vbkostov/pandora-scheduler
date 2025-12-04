@@ -4,19 +4,14 @@
 
 Updated `run_scheduler.py` to support complete end-to-end pipeline execution from target definition files, enabling generation of target manifests and visibility catalogs.
 
-## Key Features Added
+## Key Features
 
 ### 1. Target Definition File Support
 
-The script now accepts a base directory containing target definition files (JSON format):
+The script accepts a base directory containing target definition files (JSON format):
 
 ```bash
 --target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-```
-
-Or via environment variable:
-```bash
-export PANDORA_TARGET_DEFINITION_BASE=/path/to/target_definition_files
 ```
 
 ### 2. Automatic Manifest Generation
@@ -72,24 +67,16 @@ Uses: Existing manifests from `src/pandorascheduler/data/`
 
 ## Technical Implementation
 
-### Environment Variable Resolution
-
-The script checks for target definitions in this order:
-1. `--target-definitions` command-line argument
-2. `PANDORA_TARGET_DEFINITION_BASE` environment variable
-3. If neither provided, uses existing manifests (no generation)
-
 ### Configuration Flow
 
 ```python
-# In build_config_dict()
-if args.target_definitions or os.environ.get("PANDORA_TARGET_DEFINITION_BASE"):
-    config["target_definition_base"] = target_def_base
-    logger.info("Will generate target manifests from: {path}")
+# In main()
+target_def_base = args.target_definitions
 
-if args.generate_visibility:
-    config["generate_visibility"] = True
-    # Requires target_definition_base to be set
+if args.generate_visibility and not target_def_base:
+    logger.error("Visibility generation requires target definitions. "
+                 "Please provide target definitions via --target-definitions")
+    return 1
 ```
 
 ### File Path Overrides
@@ -97,14 +84,17 @@ if args.generate_visibility:
 When using custom target definitions:
 ```python
 extra_inputs = {
-    "primary_target_csv": output_dir / "data" / "exoplanet_targets.csv",
-    "auxiliary_target_csv": output_dir / "data" / "auxiliary-standard_targets.csv",
-    "monitoring_target_csv": output_dir / "data" / "monitoring-standard_targets.csv",
-    "occultation_target_csv": output_dir / "data" / "occultation-standard_targets.csv",
+    "target_definition_base": Path(target_def_base),
+    "target_definition_files": [
+        "exoplanet",
+        "auxiliary-standard",
+        "monitoring-standard",
+        "occultation-standard",
+    ],
 }
 ```
 
-This tells the pipeline to use generated manifests instead of legacy data directory.
+This tells the pipeline to generate and use fresh manifests.
 
 ## Pipeline Integration
 
@@ -113,22 +103,6 @@ The script leverages existing `pandorascheduler_rework.pipeline` functionality:
 1. **`_generate_target_manifests()`** - Called when `target_definition_base` is set
 2. **`_maybe_generate_visibility()`** - Called when `generate_visibility` is True
 3. Both functions are part of `build_schedule()` workflow
-
-## Documentation Updates
-
-### Updated Files
-
-1. **`QUICK_START.md`**
-   - Added prerequisites section explaining target definitions
-   - Added three workflow examples (full pipeline, env var, existing manifests)
-   - Expanded troubleshooting section
-   - Added output structure documentation
-
-2. **`EXAMPLE_FULL_PIPELINE.md`** (new)
-   - Step-by-step example of complete pipeline
-   - Shows environment variable setup
-   - Documents expected output structure
-   - Includes performance notes
 
 ## Testing
 
@@ -144,11 +118,10 @@ Still works with existing manifests in `src/pandorascheduler/data/`
 
 ### New Capability
 ```bash
-export PANDORA_TARGET_DEFINITION_BASE=/Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-
 poetry run python run_scheduler.py \
     --start "2026-02-05" --end "2026-02-12" \
     --output ./output \
+    --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
     --show-progress
 ```
@@ -167,8 +140,7 @@ Please ensure the legacy data directory exists.
 **After:**
 ```
 Target manifest not found: /path/to/exoplanet_targets.csv
-Please provide target definitions via --target-definitions or 
-set PANDORA_TARGET_DEFINITION_BASE environment variable, 
+Please provide target definitions via --target-definitions
 or ensure the legacy data directory exists.
 ```
 
@@ -184,7 +156,8 @@ or ensure the legacy data directory exists.
 2. **Version Control** - Target definitions in JSON are easier to track than CSV
 3. **Reproducibility** - Same definitions always produce same manifests
 4. **Flexibility** - Can run with or without visibility generation
-5. **Testing** - Easy to test with different target definition sets
+5. **Explicit Configuration** - All paths are provided via command line, no hidden defaults
+6. **Testing** - Easy to test with different target definition sets
 
 ## Future Enhancements
 
@@ -205,24 +178,26 @@ No changes required! The script maintains full backward compatibility.
 ### For New Users (Recommended Workflow)
 
 1. Clone PandoraTargetList repository
-2. Set environment variable in your shell profile:
+2. Run pipeline with explicit path:
    ```bash
-   export PANDORA_TARGET_DEFINITION_BASE=/path/to/PandoraTargetList/target_definition_files
+   poetry run python run_scheduler.py \
+       --start "2026-02-05" --end "2027-02-05" \
+       --output ./output \
+       --target-definitions /path/to/PandoraTargetList/target_definition_files \
+       --generate-visibility \
+       --show-progress
    ```
-3. Run pipeline with `--generate-visibility` on first run
-4. Subsequent runs can omit `--generate-visibility` to reuse data
+3. Subsequent runs can omit `--generate-visibility` to reuse data
 
 ### For CI/CD
 
 ```bash
-# Set in CI environment
-export PANDORA_TARGET_DEFINITION_BASE=/workspace/PandoraTargetList/target_definition_files
-
-# Run full pipeline
+# Run full pipeline with explicit paths
 poetry run python run_scheduler.py \
     --start "${START_DATE}" \
     --end "${END_DATE}" \
     --output ./pipeline_output \
+    --target-definitions /path/to/target_definition_files \
     --generate-visibility \
     --show-progress
 ```

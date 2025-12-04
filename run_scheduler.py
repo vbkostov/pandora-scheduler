@@ -47,7 +47,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -110,8 +109,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help=(
             "Base directory containing target definition files (e.g., PandoraTargetList/target_definition_files/). "
-            "When provided, generates *_targets.csv manifests from JSON definitions. "
-            "Can also be set via PANDORA_TARGET_DEFINITION_BASE environment variable."
+            "When provided, generates *_targets.csv manifests from JSON definitions."
         ),
     )
     parser.add_argument(
@@ -323,22 +321,17 @@ def main() -> int:
         # Default weights if not provided
         transit_scheduling_weights = (0.8, 0.0, 0.2)
         
-        # Resolve target definition base
+        # Resolve target definition base (explicit path only)
         target_def_base = args.target_definitions
-        if not target_def_base and "PANDORA_TARGET_DEFINITION_BASE" in os.environ:
-            target_def_base = Path(os.environ["PANDORA_TARGET_DEFINITION_BASE"])
             
-        # Resolve visibility GMAT file
+        # Resolve visibility GMAT file (explicit path only)
         visibility_gmat = args.gmat_ephemeris
-        if not visibility_gmat and "PANDORA_VISIBILITY_GMAT" in os.environ:
-            visibility_gmat = Path(os.environ["PANDORA_VISIBILITY_GMAT"])
 
         # 2. Validate Inputs
         if args.generate_visibility and not target_def_base:
             logger.error(
                 "Visibility generation requires target definitions. "
-                "Please provide target definitions via --target-definitions or "
-                "set PANDORA_TARGET_DEFINITION_BASE environment variable"
+                "Please provide target definitions via --target-definitions"
             )
             return 1
             

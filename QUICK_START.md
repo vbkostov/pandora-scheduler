@@ -2,8 +2,6 @@
 
 ## Running the Complete Pipeline
 
-## Running the Complete Pipeline
-
 The `run_scheduler.py` script is the **main entry point** for the Pandora Scheduler. It runs the complete observation scheduling pipeline from start to finish, handling target manifest generation, visibility calculation, and schedule optimization.
 
 ### Prerequisites
@@ -13,20 +11,6 @@ The scheduler needs target definition files to generate target manifests and vis
 1. **Use existing target manifests** (in `src/pandorascheduler/data/`)
 2. **Generate from target definitions** (recommended for full pipeline)
 
-#### Setting Up Target Definitions
-
-The target definition files typically live in the `PandoraTargetList` repository. You can:
-
-**Option A: Set environment variable**
-```bash
-export PANDORA_TARGET_DEFINITION_BASE=/Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-```
-
-**Option B: Specify on command line**
-```bash
---target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-```
-
 ### Basic Usage
 
 ```bash
@@ -34,7 +18,7 @@ poetry run python run_scheduler.py \
     --start "2026-02-05" \
     --end "2026-02-12" \
     --output ./output \
-    --target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files \
+    --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility
 ```
 
@@ -66,10 +50,10 @@ output/
 │   ├── targets/                                  # Primary target visibility
 │   │   └── StarName/
 │   │       └── PlanetName/
-│   │           └── Visibility for PlanetName.csv
+│   │           └── Visibility for PlanetName.parquet
 │   └── aux_targets/                              # Auxiliary target visibility
 │       └── StarName/
-│           └── Visibility for StarName.csv
+│           └── Visibility for StarName.parquet
 ├── Pandora_Schedule_0.8_0.0_0.2_2026-02-05_to_2026-02-12.csv
 ├── Pandora_science_calendar.xml
 ├── Observation_Time_Report_2026-02-05 00:00:00.csv
@@ -97,19 +81,7 @@ poetry run python run_scheduler.py \
     --start "2026-02-05" \
     --end "2026-02-12" \
     --output ./full_pipeline_output \
-    --target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files \
-    --generate-visibility \
-    --show-progress
-```
-
-#### Using Environment Variable
-```bash
-export PANDORA_TARGET_DEFINITION_BASE=/Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-
-poetry run python run_scheduler.py \
-    --start "2026-02-05" \
-    --end "2026-02-12" \
-    --output ./output \
+    --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
     --show-progress
 ```
@@ -171,11 +143,10 @@ Create `config.json`:
 {
     "obs_window_hours": 24.0,
     "transit_coverage_min": 0.4,
-    "sched_weights": [0.8, 0.0, 0.2],
+    "transit_scheduling_weights": [0.8, 0.0, 0.2],
     "min_visibility": 0.5,
     "deprioritization_limit_hours": 48.0,
     "commissioning_days": 0,
-    "aux_key": "sort_by_tdf_priority",
     "show_progress": true
 }
 ```
@@ -248,11 +219,10 @@ poetry run python run_scheduler.py \
 - `--config PATH` - JSON configuration file
 - `--target-definitions DIR` - Base directory for target definition files (PandoraTargetList/target_definition_files/)
 - `--skip-xml` - Skip science calendar XML generation
+- `--skip-manifests` - Skip regenerating target manifests from target definition files
 - `--show-progress` - Show progress bars
+- `--legacy-mode` - Use legacy scheduling algorithms for validation
 - `-v, --verbose` - Enable verbose logging
-
-**Environment Variable:**
-- `PANDORA_TARGET_DEFINITION_BASE` - Alternative to `--target-definitions` flag
 
 ### Examples
 
@@ -262,7 +232,7 @@ poetry run python run_scheduler.py \
     --start "2026-02-05" \
     --end "2026-02-12" \
     --output ./complete_run \
-    --target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files \
+    --target-definitions /path/to/PandoraTargetList/target_definition_files \
     --generate-visibility \
     --show-progress \
     --verbose
@@ -277,11 +247,11 @@ poetry run python run_scheduler.py \
     --show-progress
 ```
 
-#### Full 21-Day Run
+#### Full Year Run
 ```bash
 poetry run python run_scheduler.py \
-    --start "2026-02-01" \
-    --end "2026-02-22" \
+    --start "2026-02-05" \
+    --end "2027-02-05" \
     --output ./full_run \
     --show-progress \
     --verbose
@@ -301,17 +271,12 @@ poetry run python run_scheduler.py \
 ### Troubleshooting
 
 #### "Target manifest not found"
-**Solution 1:** Provide target definitions to generate manifests:
+Provide target definitions to generate manifests:
 ```bash
---target-definitions /Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
+--target-definitions /path/to/PandoraTargetList/target_definition_files
 ```
 
-**Solution 2:** Set environment variable:
-```bash
-export PANDORA_TARGET_DEFINITION_BASE=/Users/tsbarcl2/gitcode/PandoraTargetList/target_definition_files
-```
-
-**Solution 3:** Ensure legacy data directory exists with pre-generated manifests in `src/pandorascheduler/data/`
+Or ensure legacy data directory exists with pre-generated manifests in `src/pandorascheduler/data/`
 
 #### "Target definition directory not found"
 Check that the path to `PandoraTargetList/target_definition_files` is correct. It should contain subdirectories like:
@@ -328,14 +293,6 @@ If visibility generation fails:
 2. Check that GMAT ephemeris file exists (uses default if not specified)
 3. Verify target manifest was generated successfully
 4. Use `--verbose` to see detailed error messages
-
-#### "Unable to locate target definition files"
-The script searches for target definitions in this order:
-1. `--target-definitions` command-line argument
-2. `PANDORA_TARGET_DEFINITION_BASE` environment variable
-3. Fallback to `comparison_outputs/target_definition_files_limited/` (limited test set)
-
-For full runs, use option 1 or 2 pointing to the complete `PandoraTargetList` repository.
 
 #### "Weights must sum to 1.0"
 The three schedule weights must sum to exactly 1.0:
@@ -355,7 +312,7 @@ For long scheduling windows (>30 days), the process may require significant memo
 Typical execution times on a modern laptop:
 - 2-day window: ~2-3 minutes
 - 7-day window: ~8-10 minutes
-- 21-day window: ~25-30 minutes
+- Full year window: ~45-60 minutes
 
 The `--show-progress` flag provides real-time progress updates.
 
