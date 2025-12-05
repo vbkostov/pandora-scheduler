@@ -121,23 +121,7 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 import ast
                 ras_ = np.array([ast.literal_eval(coord)[0] for coord in roi_coord_values.iloc[0]])
                 ras_[0] = targ_info["RA"].iloc[0]
-                # all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
-                # # Ensure we have a 2D array of shape (n_rois, 2)
-                # if all_columns.size == 0:
-                #     all_columns = np.array([[targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]])
-                # else:
-                #     if all_columns.ndim == 1:
-                #         if all_columns.size == 2:
-                #             all_columns = all_columns.reshape((1, 2))
-                #         elif all_columns.size % 2 == 0:
-                #             all_columns = all_columns.reshape((-1, 2))
-                #         else:
-                #             all_columns = np.atleast_2d(all_columns)
-                #     all_columns[0, :] = [targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                # for jj in range(all_columns.shape[0]):
-                #     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'RA{jj+1}')
-                #     vda_subelement_tmp.text = f'{all_columns[jj,0]:.6f}'
                 for jj in range(len(ras_)):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'RA{jj+1}')
                     vda_subelement_tmp.text = f'{ras_[jj]:.6f}'
@@ -147,23 +131,7 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 import ast
                 decs_ = np.array([ast.literal_eval(coord)[1] for coord in roi_coord_values.iloc[0]])
                 decs_[0] = targ_info["DEC"].iloc[0]
-                # all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
-                # # Ensure we have a 2D array of shape (n_rois, 2)
-                # if all_columns.size == 0:
-                #     all_columns = np.array([[targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]])
-                # else:
-                #     if all_columns.ndim == 1:
-                #         if all_columns.size == 2:
-                #             all_columns = all_columns.reshape((1, 2))
-                #         elif all_columns.size % 2 == 0:
-                #             all_columns = all_columns.reshape((-1, 2))
-                #         else:
-                #             all_columns = np.atleast_2d(all_columns)
-                #     all_columns[0, :] = [targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]
                 vda_subelement_ = ET.SubElement(vda, xml_key)
-                # for jj in range(all_columns.shape[0]):
-                #     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'Dec{jj+1}')
-                #     vda_subelement_tmp.text = f'{all_columns[jj,1]:.6f}'
                 for jj in range(len(decs_)):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'Dec{jj+1}')
                     vda_subelement_tmp.text = f'{decs_[jj]:.6f}'
