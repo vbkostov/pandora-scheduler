@@ -195,20 +195,18 @@ def Schedule(
 
         # Use pre-converted datetime if available (performance optimization)
         if "Transit_Start_UTC" in planet_data.columns:
-            start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"]).to_numpy()
+            start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"])#.to_numpy()
         else:
             # Fallback to MJD conversion for backward compatibility
             start_transits = Time(
                 planet_data["Transit_Start"], format="mjd", scale="utc").to_value("datetime")
         
         if "Transit_Stop_UTC" in planet_data.columns:
-            end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"]).to_numpy()
+            end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"])#.to_numpy()
         else:
             # Fallback to MJD conversion for backward compatibility
             end_transits = Time(
                 planet_data["Transit_Stop"], format="mjd", scale="utc").to_value("datetime")
-
-
 
         p_trans = planet_data.index[
             (pandora_start <= start_transits) & (end_transits <= pandora_stop)
@@ -588,7 +586,7 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, las
 
         for nn in range(len(std_names)):
             vis_file = f"{PACKAGEDIR}/data/aux_targets/{std_names[nn]}/Visibility for {std_names[nn]}.csv"
-            vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
+            vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Time_UTC", "Visible"])
 
             # vis_times = Time(
             #     vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
@@ -681,7 +679,7 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, las
 
             try:
                 vis_file = f"{PACKAGEDIR}/data/aux_targets/{names[n]}/Visibility for {names[n]}.csv"
-                vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
+                vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Time_UTC", "Visible"])
 
                 # vis_times = Time(
                 #     vis["Time(MJD_UTC)"].to_numpy(), format="mjd", scale="utc"
@@ -909,7 +907,7 @@ def Schedule_all_scratch(
     ts_list = targets_prim_csv['Star Name']
     tp_list = targets_aux_csv['Planet Name']
     ps_list = targets_aux_csv['Star Name']
-    for t in tqdm(range(len(t_list))):
+    for t in range(len(t_list)):
         try:
             vis = pd.read_csv(f'{PACKAGEDIR}/data/targets/{ts_list[t]}/{t_list[t]}/Visibility for {t_list[t]}.csv')
             t_over = vis['Transit_Overlap']
@@ -933,9 +931,9 @@ if __name__ == "__main__":
 
     obs_window = timedelta(hours=24.0)
     pandora_start = "2026-02-05 00:00:00"
-    pandora_stop = "2026-04-05 00:00:00"
+    pandora_stop = "2027-02-05 00:00:00"
     sched_start= "2026-02-05 00:00:00"
-    sched_stop= "2026-04-05 00:00:00"
+    sched_stop= "2027-02-05 00:00:00"
 
     commissioning_time_ = 0  # days
 

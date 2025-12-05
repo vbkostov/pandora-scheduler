@@ -223,7 +223,7 @@ def star_vis(sun_block:float, moon_block:float, earth_block:float,
         vis_df = pd.DataFrame(data, columns = ['Time(MJD_UTC)', 'Time_UTC', \
             'SAA_Crossing', 'Visible','Earth_Sep','Moon_Sep','Sun_Sep'])
 
-        # Round Time_UTC to the nearest second
+        # Round Time_UTC the nearest second
         vis_df['Time_UTC'] = pd.to_datetime(vis_df['Time_UTC'])
         vis_df['Time_UTC'] = vis_df['Time_UTC'].dt.round('s')
 
@@ -367,6 +367,7 @@ def transit_timing(target_list:str, planet_name:str, star_name:str):
                                         microseconds=end_transits[i].microsecond)
     all_transits = np.arange(len(start_transits))
 
+
     ### Calculate which transits are visible to Pandora
     dt_vis_times = [] 
     for i in range(len(dt_iso_utc)):
@@ -395,30 +396,20 @@ def transit_timing(target_list:str, planet_name:str, star_name:str):
     start_datetimes = Start_transits.to_value("datetime")
     end_datetimes = End_transits.to_value("datetime")
 
-    # Round to nearest second
-    def round_to_second(dt):
-        if dt.microsecond >= 500000:
-            return dt.replace(microsecond=0) + timedelta(seconds=1)
-        return dt.replace(microsecond=0)
-
     for idx in range(len(start_datetimes)):
-        start_datetimes[idx] = round_to_second(start_datetimes[idx])
-        end_datetimes[idx] = round_to_second(end_datetimes[idx])
-
-    # for idx in range(len(start_datetimes)):
-    #     start_datetimes[idx] = start_datetimes[idx] - timedelta(
-    #         seconds=start_datetimes[idx].second,
-    #         microseconds=start_datetimes[idx].microsecond,
-    #     )
-    #     end_datetimes[idx] = end_datetimes[idx] - timedelta(
-    #         seconds=end_datetimes[idx].second,
-    #         microseconds=end_datetimes[idx].microsecond,
-    #     )
+        start_datetimes[idx] = start_datetimes[idx] - timedelta(
+            seconds=start_datetimes[idx].second,
+            microseconds=start_datetimes[idx].microsecond,
+        )
+        end_datetimes[idx] = end_datetimes[idx] - timedelta(
+            seconds=end_datetimes[idx].second,
+            microseconds=end_datetimes[idx].microsecond,
+        )
 
     ### Save transit data to Visibility file
-    transit_data = np.vstack((all_transits, Start_transits.value, End_transits.value, start_datetimes, end_datetimes, transit_coverage))
+    transit_data = np.vstack((all_transits, Start_transits.value, start_datetimes, End_transits.value, end_datetimes, transit_coverage))
     transit_data = transit_data.T.reshape(-1, 6)
-    transit_df = pd.DataFrame(transit_data, columns = ['Transits','Transit_Start','Transit_Stop','Transit_Start_UTC','Transit_Stop_UTC','Transit_Coverage'])
+    transit_df = pd.DataFrame(transit_data, columns = ['Transits','Transit_Start', 'Transit_Start_UTC', 'Transit_Stop','Transit_Stop_UTC', 'Transit_Coverage'])
 
     output_file_name = 'Visibility for ' + planet_name + '.csv'
     transit_df.to_csv((save_dir + output_file_name), sep=',', index=False)
