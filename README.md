@@ -1,16 +1,32 @@
-# pandora-scheduler
+# Pandora Scheduler (rework)
 
-This tool is used to develop an observation schedule for Pandora SmallSat. The codes primary focus is on scheduling the required number of transiting events for each of the planets on a user provided target list csv file. It also has the functionality to schedule non-phase constrained events that users are interested in including.
+Brief overview and quick links for developers working on the rework.
 
-For it's scheduling of transits, this tool currently has three factors whose weights can be changed by the user to optimize the schedule:
+- See `QUICK_START.md` for runnable examples and common workflows.
+- Example JSON configuration: `example_scheduler_config.json` (root) — use with `--config`.
+- Detailed keys: `docs/EXAMPLE_SCHEDULER_CONFIG.md`.
 
-- Observing efficiency - calculated by the amount of gap time in between observing events
-- SAA Crossing Overlap - how much of an observed transit will be captured during an South Atlantic Anomaly crossing of Pandora
-- Transit Coverage - how much of a transit will be captured by Pandora while maintaining keep out regions with the Sun, Moon, and Earth
+## Quick Start
 
+```bash
+# 1) Install dependencies (poetry environment assumed)
+poetry install
 
-# Requires
-----------
-- Internet to query external website for time conversion: https://astroutils.astronomy.osu.edu/time/bjd2utc.html
-- General Mission Analysis Tool (GMAT), a free open source tool for space mission design. Required to create orbital position file. More info on GMAT can be found here:
-https://software.nasa.gov/software/GSC-17177-1
+# 2) Run a quick test (assumes manifests/visibility already present)
+poetry run python run_scheduler.py \
+    --start "2026-02-05" \
+    --end "2026-02-07" \
+    --output ./output_test
+
+# 3) Full pipeline with target definitions
+poetry run python run_scheduler.py \
+    --start "2026-02-05" \
+    --end "2026-02-12" \
+    --output ./output \
+    --target-definitions /path/to/PandoraTargetList/target_definition_files \
+    --generate-visibility \
+    --gmat-ephemeris /path/to/ephemeris.txt \
+    --show-progress
+```
+
+If you need help, read `QUICK_START.md` for examples and troubleshooting tips.
