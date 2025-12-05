@@ -558,7 +558,7 @@ def process_target_files(keyword: str, *, base_path: Path) -> pd.DataFrame:
 
 
 def create_aux_list(target_definition_files: Sequence[str], package_dir):
-    """Build ``aux_list_new.csv`` from the provided target manifest CSVs.
+    """Build ``all_targets.csv`` from the provided target manifest CSVs.
 
     The legacy helper concatenated the partner target lists that share a common
     column set.  Reimplement the same behaviour explicitly to avoid importing
@@ -579,7 +579,7 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
 
     if not csv_paths:
         raise FileNotFoundError(
-            "No target definition CSVs found; unable to build aux_list_new.csv"
+            "No target definition CSVs found; unable to build all_targets.csv"
         )
 
     dataframes = [pd.read_csv(path) for path in csv_paths]
@@ -600,7 +600,7 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
         pd.concat(trimmed, ignore_index=True).drop_duplicates().reset_index(drop=True)
     )
 
-    output_path = data_dir / "aux_list_new.csv"
+    output_path = data_dir / "all_targets.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(output_path, index=False)
 
@@ -668,3 +668,26 @@ def _planet_visibility_file(targets_dir: Path, star_name: str, planet_name: str)
             f"  Expected path: {candidate}"
         )
     return candidate
+
+def read_priority_csv(file_path):
+    # Read the entire file
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Extract metadata
+    metadata = {}
+    for line in lines:
+        if line.startswith('#'):
+            if ':' in line:
+                key, value = line.strip('# ').split(':', 1)
+                metadata[key.strip()] = value.strip()
+        else:
+            break  # Stop when we hit non-comment lines
+
+    # Find the index where the actual CSV data starts
+    data_start = next(i for i, line in enumerate(lines) if not line.startswith('#'))
+
+    # Read the CSV data
+    df = pd.read_csv(file_path, skiprows=data_start)
+
+    return metadata, df

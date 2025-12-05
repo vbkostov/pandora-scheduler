@@ -85,7 +85,7 @@ class _ScienceCalendarBuilder:
 
         self.data_dir = inputs.data_dir
         self.target_catalog = _read_catalog(self.data_dir / "exoplanet_targets.csv")
-        self.aux_catalog = _read_catalog(self.data_dir / "aux_list_new.csv")
+        self.aux_catalog = _read_catalog(self.data_dir / "all_targets.csv")
         self.occ_catalog = _read_catalog(
             self.data_dir / "occultation-standard_targets.csv"
         )
