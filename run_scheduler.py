@@ -52,9 +52,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional, Any
 
-from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule, SchedulerResult
-from pandorascheduler_rework.science_calendar import (
+from src.pandorascheduler_rework.config import PandoraSchedulerConfig
+from src.pandorascheduler_rework.pipeline import build_schedule, SchedulerResult
+from src.pandorascheduler_rework.science_calendar import (
     generate_science_calendar,
     ScienceCalendarInputs,
 )
