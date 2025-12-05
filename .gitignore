@@ -64,3 +64,4 @@ src/pandorascheduler/scheduler_debug.log
 *.json
 *.txt
 *.zip
+*.parquet
