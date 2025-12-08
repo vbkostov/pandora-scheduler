@@ -869,11 +869,8 @@ def _schedule_auxiliary_target(
     priority_baseline = 0.0
     log_info = "No fuly or partially visible non-primary targets, Free Time..."
 
-    # priority_fn_tmp = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/auxiliary-standard/auxiliary-standard_priorities.csv'
-    # metadata_tmp, data_tmp = observation_utils.read_priority_csv(priority_fn_tmp)
-    # deprioritization_limit = data_tmp[data_tmp['target'] == ZZZTARGET_NAME?]['hours_req'].iloc[0]
+    # deprioritization_limit = timedelta(hours=config.deprioritization_limit_hours)
 
-    deprioritization_limit = timedelta(hours=config.deprioritization_limit_hours)
     non_primary_priorities = {
         name: stats.last_priority
         for name, stats in state.non_primary_obs_time.items()
@@ -1009,7 +1006,10 @@ def _schedule_auxiliary_target(
         name = selected_row[0]
         stats = state.non_primary_obs_time.setdefault(name, AuxiliaryObservationStats())
         stats.total_time += stop - active_start
-        stats.last_priority = priority_val
+
+        priority_fn_tmp = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/auxiliary-standard/auxiliary-standard_priorities.csv'
+        metadata_tmp, data_tmp = observation_utils.read_priority_csv(priority_fn_tmp)
+        deprioritization_limit = data_tmp[data_tmp['target'] == name]['hours_req'].iloc[0]
 
         if stats.total_time > deprioritization_limit:
             logger.warning("Deprioritizing %s due to accumulated auxiliary time", name)
