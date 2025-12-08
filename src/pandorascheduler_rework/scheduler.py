@@ -1009,7 +1009,7 @@ def _schedule_auxiliary_target(
 
         priority_fn_tmp = '/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/auxiliary-standard/auxiliary-standard_priorities.csv'
         metadata_tmp, data_tmp = observation_utils.read_priority_csv(priority_fn_tmp)
-        deprioritization_limit = data_tmp[data_tmp['target'] == name]['hours_req'].iloc[0]
+        deprioritization_limit = timedelta(hours = data_tmp[data_tmp['target'] == name]['hours_req'].iloc[0])
 
         if stats.total_time > deprioritization_limit:
             logger.warning("Deprioritizing %s due to accumulated auxiliary time", name)
