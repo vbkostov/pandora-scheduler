@@ -36,6 +36,170 @@ LOGGER = logging.getLogger(__name__)
 
 _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 
+# Default column name for per-target visit duration
+_OBS_WINDOW_COLUMN = "Obs Window (hrs)"
+
+
+class TransitUnschedulableError(ValueError):
+    """Raised when a transit cannot be scheduled with the required edge buffers."""
+
+    pass
+
+
+def get_target_visit_duration(
+    planet_name: str,
+    target_list: pd.DataFrame,
+    default: timedelta,
+) -> timedelta:
+    """Return visit duration from 'Obs Window (hrs)' column, or default.
+
+    Parameters
+    ----------
+    planet_name
+        Name of the planet to look up.
+    target_list
+        DataFrame containing target definitions with 'Planet Name' column.
+    default
+        Fallback duration if column is missing or value is invalid.
+
+    Returns
+    -------
+    timedelta
+        The visit duration for this target.
+    """
+    if _OBS_WINDOW_COLUMN not in target_list.columns:
+        return default
+
+    mask = target_list["Planet Name"] == planet_name
+    if not mask.any():
+        return default
+
+    value = target_list.loc[mask, _OBS_WINDOW_COLUMN].iloc[0]
+    if pd.isna(value):
+        return default
+
+    try:
+        hours = float(value)
+        if hours <= 0:
+            LOGGER.warning(
+                "Invalid Obs Window (hrs) for %s: %s, using default",
+                planet_name,
+                value,
+            )
+            return default
+        return timedelta(hours=hours)
+    except (TypeError, ValueError):
+        LOGGER.warning(
+            "Cannot parse Obs Window (hrs) for %s: %s, using default",
+            planet_name,
+            value,
+        )
+        return default
+
+
+def compute_edge_buffer(
+    visit_duration: timedelta,
+    short_visit_threshold_hours: float = 12.0,
+    short_visit_edge_buffer_hours: float = 1.5,
+    long_visit_edge_buffer_hours: float = 4.0,
+) -> timedelta:
+    """Compute the edge buffer based on visit duration.
+
+    Parameters
+    ----------
+    visit_duration
+        The total visit duration.
+    short_visit_threshold_hours
+        Visits shorter than this use the short buffer.
+    short_visit_edge_buffer_hours
+        Edge buffer for short visits.
+    long_visit_edge_buffer_hours
+        Edge buffer for long visits.
+
+    Returns
+    -------
+    timedelta
+        The edge buffer to use (same for pre and post transit).
+    """
+    visit_hours = visit_duration.total_seconds() / 3600.0
+    if visit_hours < short_visit_threshold_hours:
+        return timedelta(hours=short_visit_edge_buffer_hours)
+    return timedelta(hours=long_visit_edge_buffer_hours)
+
+
+def validate_transit_schedulable(
+    planet_name: str,
+    transit_duration: timedelta,
+    visit_duration: timedelta,
+    edge_buffer: timedelta,
+) -> None:
+    """Validate that a transit can fit within the visit with required buffers.
+
+    Parameters
+    ----------
+    planet_name
+        Name of the planet (for error messages).
+    transit_duration
+        Duration of the transit.
+    visit_duration
+        Duration of the observation visit.
+    edge_buffer
+        Required buffer before and after transit.
+
+    Raises
+    ------
+    TransitUnschedulableError
+        If the transit cannot fit with required edge buffers.
+    """
+    required_duration = transit_duration + 2 * edge_buffer
+    if required_duration > visit_duration:
+        raise TransitUnschedulableError(
+            f"Transit for {planet_name} cannot be scheduled: "
+            f"transit duration ({transit_duration}) + 2 × edge buffer ({edge_buffer}) "
+            f"= {required_duration} exceeds visit duration ({visit_duration}). "
+            f"Either increase visit duration or reduce edge buffer requirements."
+        )
+
+
+def compute_transit_start_bounds(
+    transit_start: datetime,
+    transit_stop: datetime,
+    visit_duration: timedelta,
+    edge_buffer: timedelta,
+) -> tuple[datetime, datetime]:
+    """Compute earliest and latest valid visit start times for a transit.
+
+    The visit must:
+    - Start at least `edge_buffer` before transit_start
+    - End at least `edge_buffer` after transit_stop
+
+    Parameters
+    ----------
+    transit_start
+        Start time of the transit.
+    transit_stop
+        End time of the transit.
+    visit_duration
+        Total duration of the observation visit.
+    edge_buffer
+        Required buffer before and after transit.
+
+    Returns
+    -------
+    tuple[datetime, datetime]
+        (earliest_start, latest_start) for the visit.
+        If earliest_start > latest_start, no valid start window exists.
+    """
+    # Latest start: transit must start at least edge_buffer after visit start
+    latest_start = transit_start - edge_buffer
+
+    # Earliest start: transit must end at least edge_buffer before visit end
+    # So: visit_start + visit_duration >= transit_stop + edge_buffer
+    # => visit_start >= transit_stop + edge_buffer - visit_duration
+    earliest_start = transit_stop + edge_buffer - visit_duration
+
+    return earliest_start, latest_start
+
 
 def general_parameters(
     obs_sequence_duration: int = 90,
@@ -386,6 +550,10 @@ def check_if_transits_in_obs_window(
     transit_scheduling_weights: Sequence[float],
     transit_coverage_min: float,
     targets_dir: Path,
+    *,
+    short_visit_threshold_hours: float = 12.0,
+    short_visit_edge_buffer_hours: float = 1.5,
+    long_visit_edge_buffer_hours: float = 4.0,
 ):
 
     result_df = temp_df.copy()
@@ -395,6 +563,7 @@ def check_if_transits_in_obs_window(
         "DEC",
         "Obs Start",
         "Obs Gap Time",
+        "Visit Duration",
         "Transit Coverage",
         "SAA Overlap",
         "Schedule Factor",
@@ -477,8 +646,43 @@ def check_if_transits_in_obs_window(
         start_series = start_series.dt.floor("min")
         stop_series = stop_series.dt.floor("min")
 
-        early_start = stop_series - timedelta(hours=20)
-        late_start = start_series - timedelta(hours=4)
+        # Get per-target visit duration and compute edge buffer
+        visit_duration = get_target_visit_duration(
+            str(planet_name), target_list, obs_window
+        )
+        edge_buffer = compute_edge_buffer(
+            visit_duration,
+            short_visit_threshold_hours,
+            short_visit_edge_buffer_hours,
+            long_visit_edge_buffer_hours,
+        )
+
+        # Validate that transits can be scheduled with the required edge buffers
+        # Use the first transit as representative (they should all have similar duration)
+        if len(start_series) > 0 and len(stop_series) > 0:
+            sample_transit_duration = stop_series.iloc[0] - start_series.iloc[0]
+            try:
+                validate_transit_schedulable(
+                    str(planet_name),
+                    sample_transit_duration,
+                    visit_duration,
+                    edge_buffer,
+                )
+            except TransitUnschedulableError as e:
+                LOGGER.error(str(e))
+                raise
+
+        # Compute earliest and latest valid start times for each transit
+        early_start_list = []
+        late_start_list = []
+        for ts, te in zip(start_series, stop_series):
+            earliest, latest = compute_transit_start_bounds(
+                ts, te, visit_duration, edge_buffer
+            )
+            early_start_list.append(earliest)
+            late_start_list.append(latest)
+        early_start = pd.Series(early_start_list)
+        late_start = pd.Series(late_start_list)
 
         try:
             ra_tar = float(row["RA"])
@@ -507,7 +711,8 @@ def check_if_transits_in_obs_window(
 
             obs_start = overlap_times[0]
             gap_time = obs_start - obs_rng[0]
-            schedule_factor = 1 - (gap_time / obs_window)
+            # Use per-target visit duration for schedule factor normalization
+            schedule_factor = 1 - (gap_time / visit_duration)
             transit_coverage = float(coverage_values[j])
             saa_overlap = float(saa_values[j])
             quality_factor = (
@@ -524,6 +729,7 @@ def check_if_transits_in_obs_window(
                         dec_tar,
                         obs_start,
                         gap_time,
+                        visit_duration,
                         transit_coverage,
                         saa_overlap,
                         schedule_factor,

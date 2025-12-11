@@ -208,6 +208,7 @@ def run_scheduler(
                     "Planet Name",
                     "Obs Start",
                     "Obs Gap Time",
+                    "Visit Duration",
                     "Transit Coverage",
                     "SAA Overlap",
                     "Schedule Factor",
@@ -227,6 +228,9 @@ def run_scheduler(
             list(config.transit_scheduling_weights),
             config.transit_coverage_min,
             inputs.paths.targets_dir,
+            short_visit_threshold_hours=config.short_visit_threshold_hours,
+            short_visit_edge_buffer_hours=config.short_visit_edge_buffer_hours,
+            long_visit_edge_buffer_hours=config.long_visit_edge_buffer_hours,
         )
 
         too_result = _handle_targets_of_opportunity(
@@ -647,8 +651,24 @@ def _handle_targets_of_opportunity(
 
         start_transit, end_transit = transit_windows[planet_name]
 
-        early_start = end_transit - timedelta(hours=20)
-        late_start = start_transit - timedelta(hours=4)
+        # Use per-target visit duration and edge buffer for ToO overlap check
+        planet_name_str = str(planet_name)
+        visit_duration = observation_utils.get_target_visit_duration(
+            planet_name_str, inputs.target_list, config.obs_window
+        )
+        edge_buffer = observation_utils.compute_edge_buffer(
+            visit_duration,
+            config.short_visit_threshold_hours,
+            config.short_visit_edge_buffer_hours,
+            config.long_visit_edge_buffer_hours,
+        )
+        early_start, late_start = observation_utils.compute_transit_start_bounds(
+            start_transit, end_transit, visit_duration, edge_buffer
+        )
+
+        # Skip if no valid start window
+        if early_start > late_start:
+            continue
 
         start_range = pd.date_range(early_start, late_start, freq="min")
         overlap_times = obs_range.intersection(start_range)
@@ -709,8 +729,24 @@ def _handle_targets_of_opportunity(
         tf_ratio = transit_ratio.loc[planet_name]
         start_transit, end_transit = transit_windows[planet_name]
 
-        early_start = end_transit - timedelta(hours=20)
-        late_start = start_transit - timedelta(hours=4)
+        # Use per-target visit duration and edge buffer
+        planet_name_str = str(planet_name)
+        visit_duration = observation_utils.get_target_visit_duration(
+            planet_name_str, inputs.target_list, config.obs_window
+        )
+        edge_buffer = observation_utils.compute_edge_buffer(
+            visit_duration,
+            config.short_visit_threshold_hours,
+            config.short_visit_edge_buffer_hours,
+            config.long_visit_edge_buffer_hours,
+        )
+        early_start, late_start = observation_utils.compute_transit_start_bounds(
+            start_transit, end_transit, visit_duration, edge_buffer
+        )
+
+        # Skip if no valid start window
+        if early_start > late_start:
+            continue
 
         start_range = pd.date_range(early_start, late_start, freq="min")
         overlap_times = obs_range.intersection(start_range)
@@ -1049,7 +1085,16 @@ def _schedule_primary_target(
     ra_value = first_row["RA"]
     dec_value = first_row["DEC"]
     obs_start = pd.Timestamp(first_row["Obs Start"]).to_pydatetime()
-    obs_stop = obs_start + config.obs_window
+    
+    # Use per-target visit duration from candidate (already computed in check_if_transits_in_obs_window)
+    visit_duration = first_row.get("Visit Duration")
+    if visit_duration is None or pd.isna(visit_duration):
+        # Fallback to config default
+        visit_duration = config.obs_window
+    elif isinstance(visit_duration, pd.Timedelta):
+        visit_duration = visit_duration.to_pytimedelta()
+    
+    obs_stop = obs_start + visit_duration
     trans_cover = first_row["Transit Coverage"]
     saa_cover = first_row["SAA Overlap"]
     s_factor = first_row["Schedule Factor"]

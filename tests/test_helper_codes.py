@@ -322,6 +322,7 @@ def test_check_if_transits_in_obs_window_matches_basic_case(
             "DEC",
             "Obs Start",
             "Obs Gap Time",
+            "Visit Duration",
             "Transit Coverage",
             "SAA Overlap",
             "Schedule Factor",
@@ -334,6 +335,7 @@ def test_check_if_transits_in_obs_window_matches_basic_case(
         {
             "Planet Name": ["WASP-107 b"],
             "Star Name": ["WASP-107"],
+            "Obs Window (hrs)": [24.0],
         }
     )
 
@@ -401,12 +403,13 @@ def test_no_transits_in_observation_window(
     })
     temp_df = pd.DataFrame(columns=[
         "Planet Name", "RA", "DEC", "Obs Start", "Obs Gap Time",
-        "Transit Coverage", "SAA Overlap", "Schedule Factor",
+        "Visit Duration", "Transit Coverage", "SAA Overlap", "Schedule Factor",
         "Transit Factor", "Quality Factor", "Comments",
     ])
     target_list = pd.DataFrame({
         "Planet Name": ["NoTransit b"],
         "Star Name": ["NoTransit"],
+        "Obs Window (hrs)": [24.0],
     })
     
     obs_rng = pd.date_range(start, start + timedelta(minutes=90), freq="min")
@@ -472,12 +475,13 @@ def test_partial_transit_coverage_calculation(
     })
     temp_df = pd.DataFrame(columns=[
         "Planet Name", "RA", "DEC", "Obs Start", "Obs Gap Time",
-        "Transit Coverage", "SAA Overlap", "Schedule Factor",
+        "Visit Duration", "Transit Coverage", "SAA Overlap", "Schedule Factor",
         "Transit Factor", "Quality Factor", "Comments",
     ])
     target_list = pd.DataFrame({
         "Planet Name": ["PartialPlanet"],
         "Star Name": ["PartialStar"],
+        "Obs Window (hrs)": [24.0],
     })
     
     obs_rng = pd.date_range(start, start + timedelta(minutes=90), freq="min")

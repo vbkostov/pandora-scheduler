@@ -68,6 +68,19 @@ class PandoraSchedulerConfig:
     """Maximum acceptable SAA overlap fraction (0-1)."""
 
     # ============================================================================
+    # TRANSIT EDGE BUFFER PARAMETERS
+    # ============================================================================
+
+    short_visit_threshold_hours: float = 12.0
+    """Visits shorter than this use short_visit_edge_buffer_hours."""
+
+    short_visit_edge_buffer_hours: float = 1.5
+    """Edge buffer (pre/post transit) for visits < short_visit_threshold_hours."""
+
+    long_visit_edge_buffer_hours: float = 4.0
+    """Edge buffer (pre/post transit) for visits >= short_visit_threshold_hours."""
+
+    # ============================================================================
     # WEIGHTING FACTORS (must sum to 1.0)
     # ============================================================================
 
