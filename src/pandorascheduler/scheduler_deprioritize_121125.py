@@ -404,6 +404,7 @@ def Schedule(
             sched_df_sec = helper_codes.schedule_secondary_exoplanets(tracker_sec, start, stop, obs_window_non_primary, transit_coverage_min)
 
             if len(sched_df_sec) > 0:
+                print(f'----> Scheduling Secondary Exoplanet for {sched_df_sec['Observation Start'].iloc[0]} to {sched_df_sec['Observation Stop'].iloc[0]}')
                 sort_windows = np.sort([start, pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), stop])
 
                 aux_df_1, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(sort_windows[0], sort_windows[1], aux_key, \
@@ -482,6 +483,7 @@ def Schedule(
                 sched_df_sec = helper_codes.schedule_secondary_exoplanets(tracker_sec, obs_rng[0], obs_start, obs_window_non_primary, transit_coverage_min)
 
                 if len(sched_df_sec) > 0:
+                    print(f'----> Scheduling Secondary Exoplanet for {sched_df_sec['Observation Start'].iloc[0]} to {sched_df_sec['Observation Stop'].iloc[0]}')
                     sort_windows = np.sort([obs_rng[0], pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), obs_start])
 
                     aux_df_1, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(sort_windows[0], sort_windows[1], aux_key, \
