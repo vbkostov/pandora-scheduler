@@ -99,24 +99,36 @@ class _ScienceCalendarBuilder:
 
         # Track cumulative observation time for each occultation target
         self.occultation_obs_time: Dict[str, timedelta] = {}
-        # Default time limit (used when per-target value not available)
-        self.default_occultation_time_limit = timedelta(
-            hours=config.occultation_deprioritization_hours
-        )
 
     def _get_occultation_time_limit(self, target_name: str) -> timedelta:
         """Get the time limit for an occultation target.
         
-        Uses per-target 'Number of Hours Requested' from manifest if available,
-        otherwise falls back to the global default.
+        Looks up 'Number of Hours Requested' from the occultation manifest.
+        Raises ValueError if the catalog is missing, the target is not found,
+        or the required column is missing.
         """
-        if self.occ_catalog is not None and not self.occ_catalog.empty:
-            match = self.occ_catalog[self.occ_catalog["Star Name"] == target_name]
-            if not match.empty and "Number of Hours Requested" in match.columns:
-                hours_req = match.iloc[0]["Number of Hours Requested"]
-                if pd.notna(hours_req):
-                    return timedelta(hours=float(hours_req))
-        return self.default_occultation_time_limit
+        if self.occ_catalog is None or self.occ_catalog.empty:
+            raise ValueError(
+                f"Cannot get time limit for occultation target '{target_name}': "
+                "occultation catalog is not loaded"
+            )
+        match = self.occ_catalog[self.occ_catalog["Star Name"] == target_name]
+        if match.empty:
+            raise ValueError(
+                f"Occultation target '{target_name}' not found in catalog"
+            )
+        if "Number of Hours Requested" not in match.columns:
+            raise ValueError(
+                "Occultation catalog is missing required 'Number of Hours Requested' "
+                "column"
+            )
+        hours_req = match.iloc[0]["Number of Hours Requested"]
+        if pd.isna(hours_req):
+            raise ValueError(
+                f"Occultation target '{target_name}' has missing "
+                "'Number of Hours Requested' value"
+            )
+        return timedelta(hours=float(hours_req))
 
     def build_calendar(self) -> ET.Element:
         root = ET.Element("ScienceCalendar", xmlns="/pandora/calendar/")

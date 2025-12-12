@@ -105,3 +105,67 @@ def test_manifest_matches_legacy(category: str, monkeypatch: pytest.MonkeyPatch)
     rework_sorted = rework_df.sort_values(by=sort_key).reset_index(drop=True)
 
     pd.testing.assert_frame_equal(rework_sorted, legacy_sorted)
+
+
+class TestManifestStrictValidation:
+    """Tests for strict validation of required fields in manifests."""
+
+    def test_missing_hours_req_column_raises_error(self):
+        """Test that missing 'hours_req' column in priority table raises an error."""
+        from pandorascheduler_rework.targets.manifest import TargetDefinitionError, _apply_priority
+
+        category = "auxiliary-standard"
+        
+        # Create priority table WITHOUT hours_req column
+        priority_df = pd.DataFrame({
+            "rank": [1],
+            "target": ["test_star"],
+            "priority": [0.9],
+            # Intentionally missing: "hours_req"
+        })
+        
+        row = {"Original Filename": "test_star", "Star Name": "TestStar"}
+
+        with pytest.raises(TargetDefinitionError, match="missing required.*hours_req"):
+            _apply_priority(row, category, priority_df)
+
+    def test_missing_hours_req_value_raises_error(self):
+        """Test that missing 'hours_req' value for a target raises an error."""
+        from pandorascheduler_rework.targets.manifest import TargetDefinitionError, _apply_priority
+        import numpy as np
+
+        category = "auxiliary-standard"
+        
+        # Create priority table with NaN hours_req value
+        priority_df = pd.DataFrame({
+            "rank": [1],
+            "target": ["test_star"],
+            "priority": [0.9],
+            "hours_req": [np.nan],  # Missing value
+        })
+        
+        row = {"Original Filename": "test_star", "Star Name": "TestStar"}
+
+        with pytest.raises(TargetDefinitionError, match="missing.*hours_req.*value"):
+            _apply_priority(row, category, priority_df)
+
+    def test_valid_hours_req_works(self):
+        """Test that valid 'hours_req' value is read correctly."""
+        from pandorascheduler_rework.targets.manifest import _apply_priority
+
+        category = "auxiliary-standard"
+        
+        # Create priority table with valid hours_req
+        priority_df = pd.DataFrame({
+            "rank": [1],
+            "target": ["test_star"],
+            "priority": [0.9],
+            "hours_req": [100],
+        })
+        
+        row = {"Original Filename": "test_star", "Star Name": "TestStar"}
+        _apply_priority(row, category, priority_df)
+        
+        assert "Number of Hours Requested" in row
+        assert row["Number of Hours Requested"] == 100
+

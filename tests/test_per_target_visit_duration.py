@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from pandorascheduler_rework.observation_utils import (
+    MissingObsWindowError,
     TransitUnschedulableError,
     compute_edge_buffer,
     compute_transit_start_bounds,
@@ -23,59 +24,54 @@ class TestGetTargetVisitDuration:
             "Planet Name": ["Planet-A", "Planet-B"],
             "Obs Window (hrs)": [6.0, 12.0],
         })
-        default = timedelta(hours=24)
 
-        result = get_target_visit_duration("Planet-A", target_list, default)
+        result = get_target_visit_duration("Planet-A", target_list)
         assert result == timedelta(hours=6)
 
-        result = get_target_visit_duration("Planet-B", target_list, default)
+        result = get_target_visit_duration("Planet-B", target_list)
         assert result == timedelta(hours=12)
 
-    def test_returns_default_when_column_missing(self):
-        """Should return default when Obs Window (hrs) column doesn't exist."""
+    def test_raises_when_column_missing(self):
+        """Should raise when Obs Window (hrs) column doesn't exist."""
         target_list = pd.DataFrame({
             "Planet Name": ["Planet-A"],
         })
-        default = timedelta(hours=24)
 
-        result = get_target_visit_duration("Planet-A", target_list, default)
-        assert result == default
+        with pytest.raises(MissingObsWindowError, match="missing required column"):
+            get_target_visit_duration("Planet-A", target_list)
 
-    def test_returns_default_when_planet_not_found(self):
-        """Should return default when planet is not in target list."""
+    def test_raises_when_planet_not_found(self):
+        """Should raise when planet is not in target list."""
         target_list = pd.DataFrame({
             "Planet Name": ["Planet-A"],
             "Obs Window (hrs)": [6.0],
         })
-        default = timedelta(hours=24)
 
-        result = get_target_visit_duration("Planet-X", target_list, default)
-        assert result == default
+        with pytest.raises(MissingObsWindowError, match="not present"):
+            get_target_visit_duration("Planet-X", target_list)
 
-    def test_returns_default_for_nan_value(self):
-        """Should return default when value is NaN."""
+    def test_raises_for_nan_value(self):
+        """Should raise when value is NaN."""
         target_list = pd.DataFrame({
             "Planet Name": ["Planet-A"],
             "Obs Window (hrs)": [float("nan")],
         })
-        default = timedelta(hours=24)
 
-        result = get_target_visit_duration("Planet-A", target_list, default)
-        assert result == default
+        with pytest.raises(MissingObsWindowError, match="missing"):
+            get_target_visit_duration("Planet-A", target_list)
 
-    def test_returns_default_for_invalid_value(self):
-        """Should return default for non-positive values."""
+    def test_raises_for_invalid_value(self):
+        """Should raise for non-positive values."""
         target_list = pd.DataFrame({
             "Planet Name": ["Planet-A", "Planet-B"],
             "Obs Window (hrs)": [0.0, -5.0],
         })
-        default = timedelta(hours=24)
 
-        result = get_target_visit_duration("Planet-A", target_list, default)
-        assert result == default
+        with pytest.raises(MissingObsWindowError, match="invalid"):
+            get_target_visit_duration("Planet-A", target_list)
 
-        result = get_target_visit_duration("Planet-B", target_list, default)
-        assert result == default
+        with pytest.raises(MissingObsWindowError, match="invalid"):
+            get_target_visit_duration("Planet-B", target_list)
 
 
 class TestComputeEdgeBuffer:
@@ -263,16 +259,15 @@ class TestIntegration:
             "Planet Name": ["WASP-107b", "TOI-700b"],
             "Obs Window (hrs)": [24.0, 6.0],
         })
-        default_duration = timedelta(hours=24)
 
         # WASP-107b: 24h visit -> 4h buffer
-        duration = get_target_visit_duration("WASP-107b", target_list, default_duration)
+        duration = get_target_visit_duration("WASP-107b", target_list)
         buffer = compute_edge_buffer(duration)
         assert duration == timedelta(hours=24)
         assert buffer == timedelta(hours=4)
 
         # TOI-700b: 6h visit -> 1.5h buffer
-        duration = get_target_visit_duration("TOI-700b", target_list, default_duration)
+        duration = get_target_visit_duration("TOI-700b", target_list)
         buffer = compute_edge_buffer(duration)
         assert duration == timedelta(hours=6)
         assert buffer == timedelta(hours=1.5)

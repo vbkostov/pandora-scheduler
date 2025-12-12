@@ -16,7 +16,7 @@ Scope
 - The keys below correspond to the fields on `PandoraSchedulerConfig` (see `src/pandorascheduler_rework/config.py`). Default values shown are the library defaults used when keys are omitted.
 
 Timing & window
-- `obs_window_hours` (float, default `24.0`): length in hours of the observation window used by the scheduler.
+- `schedule_step_hours` (float, default `24.0`): scheduler rolling window step size in hours.
 - `commissioning_days` (int, default `0`): number of commissioning days at mission start.
 
 Paths & data sources

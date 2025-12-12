@@ -350,7 +350,6 @@ def test_check_if_transits_in_obs_window_matches_basic_case(
         start,
         start + timedelta(days=1),
         obs_rng,
-        timedelta(minutes=90),
         [0.5, 0.25, 0.25],
         0.0,
         tmp_path / "targets",
@@ -425,7 +424,6 @@ def test_no_transits_in_observation_window(
         start,  # sched_start
         start + timedelta(days=1),  # sched_stop
         obs_rng,
-        timedelta(minutes=90),
         [0.5, 0.25, 0.25],
         0.0,
         tmp_path / "targets",
@@ -496,7 +494,6 @@ def test_partial_transit_coverage_calculation(
         start,
         start + timedelta(days=1),
         obs_rng,
-        timedelta(minutes=90),
         [0.5, 0.25, 0.25],
         0.0,  # transit_coverage_min = 0.0, so partial transit is OK
         tmp_path / "targets",

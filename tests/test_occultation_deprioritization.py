@@ -35,25 +35,184 @@ def _write_planet_visibility(directory: Path, name: str, start: datetime, stop: 
     ).to_parquet(directory / f"Visibility for {name}.parquet", index=False)
 
 
-class TestOccultationDeprioritizationConfig:
-    """Tests for the occultation deprioritization config parameter."""
+class TestGetOccultationTimeLimitStrict:
+    """Tests for strict validation in _get_occultation_time_limit."""
 
-    def test_default_occultation_hours_limit(self):
-        """Test that default occultation time limit is 8 hours."""
+    def test_raises_when_catalog_empty(self, tmp_path):
+        """Test that error is raised when occultation catalog is empty."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "exoplanet_targets.csv", index=False
+        )
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "all_targets.csv", index=False
+        )
+        # Create empty occultation catalog
+        pd.DataFrame({
+            "Star Name": [],
+            "RA": [],
+            "DEC": [],
+            "Number of Hours Requested": [],
+        }).to_csv(data_dir / "occultation-standard_targets.csv", index=False)
+
+        schedule_df = pd.DataFrame([{
+            "Target": "TestPlanet",
+            "Observation Start": "2026-01-01 00:00:00",
+            "Observation Stop": "2026-01-01 01:00:00",
+            "Transit Coverage": 0.5,
+            "SAA Overlap": 0.0,
+            "Schedule Factor": 0.9,
+            "Quality Factor": 0.8,
+            "Comments": "",
+        }])
+        schedule_path = tmp_path / "schedule.csv"
+        schedule_df.to_csv(schedule_path, index=False)
+
+        inputs = science_calendar.ScienceCalendarInputs(
+            schedule_csv=schedule_path,
+            data_dir=data_dir,
+        )
         config = PandoraSchedulerConfig(
             window_start=datetime(2026, 1, 1),
             window_end=datetime(2026, 1, 2),
         )
-        assert config.occultation_deprioritization_hours == 8.0
 
-    def test_custom_occultation_hours_limit(self):
-        """Test that custom occultation time limit can be set."""
+        builder = science_calendar._ScienceCalendarBuilder(inputs, config)
+        with pytest.raises(ValueError, match="occultation catalog is not loaded"):
+            builder._get_occultation_time_limit("AnyTarget")
+    def test_raises_when_target_not_in_catalog(self, tmp_path):
+        """Test that error is raised when target is not found in catalog."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "exoplanet_targets.csv", index=False
+        )
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "all_targets.csv", index=False
+        )
+        pd.DataFrame({
+            "Star Name": ["OccA"],
+            "RA": [10.0],
+            "DEC": [20.0],
+            "Number of Hours Requested": [600],
+        }).to_csv(data_dir / "occultation-standard_targets.csv", index=False)
+
+        schedule_df = pd.DataFrame([{
+            "Target": "TestPlanet",
+            "Observation Start": "2026-01-01 00:00:00",
+            "Observation Stop": "2026-01-01 01:00:00",
+            "Transit Coverage": 0.5,
+            "SAA Overlap": 0.0,
+            "Schedule Factor": 0.9,
+            "Quality Factor": 0.8,
+            "Comments": "",
+        }])
+        schedule_path = tmp_path / "schedule.csv"
+        schedule_df.to_csv(schedule_path, index=False)
+
+        inputs = science_calendar.ScienceCalendarInputs(
+            schedule_csv=schedule_path,
+            data_dir=data_dir,
+        )
         config = PandoraSchedulerConfig(
             window_start=datetime(2026, 1, 1),
             window_end=datetime(2026, 1, 2),
-            occultation_deprioritization_hours=12.0,
         )
-        assert config.occultation_deprioritization_hours == 12.0
+
+        builder = science_calendar._ScienceCalendarBuilder(inputs, config)
+        with pytest.raises(ValueError, match="not found in catalog"):
+            builder._get_occultation_time_limit("UnknownTarget")
+
+    def test_raises_when_column_missing(self, tmp_path):
+        """Test that error is raised when 'Number of Hours Requested' column is missing."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "exoplanet_targets.csv", index=False
+        )
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "all_targets.csv", index=False
+        )
+        # Missing "Number of Hours Requested" column
+        pd.DataFrame({
+            "Star Name": ["OccA"],
+            "RA": [10.0],
+            "DEC": [20.0],
+        }).to_csv(data_dir / "occultation-standard_targets.csv", index=False)
+
+        schedule_df = pd.DataFrame([{
+            "Target": "TestPlanet",
+            "Observation Start": "2026-01-01 00:00:00",
+            "Observation Stop": "2026-01-01 01:00:00",
+            "Transit Coverage": 0.5,
+            "SAA Overlap": 0.0,
+            "Schedule Factor": 0.9,
+            "Quality Factor": 0.8,
+            "Comments": "",
+        }])
+        schedule_path = tmp_path / "schedule.csv"
+        schedule_df.to_csv(schedule_path, index=False)
+
+        inputs = science_calendar.ScienceCalendarInputs(
+            schedule_csv=schedule_path,
+            data_dir=data_dir,
+        )
+        config = PandoraSchedulerConfig(
+            window_start=datetime(2026, 1, 1),
+            window_end=datetime(2026, 1, 2),
+        )
+
+        builder = science_calendar._ScienceCalendarBuilder(inputs, config)
+        with pytest.raises(ValueError, match="missing required.*Number of Hours Requested"):
+            builder._get_occultation_time_limit("OccA")
+
+    def test_returns_hours_when_valid(self, tmp_path):
+        """Test that correct timedelta is returned when data is valid."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "exoplanet_targets.csv", index=False
+        )
+        pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
+            data_dir / "all_targets.csv", index=False
+        )
+        pd.DataFrame({
+            "Star Name": ["OccA"],
+            "RA": [10.0],
+            "DEC": [20.0],
+            "Number of Hours Requested": [600],
+        }).to_csv(data_dir / "occultation-standard_targets.csv", index=False)
+
+        schedule_df = pd.DataFrame([{
+            "Target": "TestPlanet",
+            "Observation Start": "2026-01-01 00:00:00",
+            "Observation Stop": "2026-01-01 01:00:00",
+            "Transit Coverage": 0.5,
+            "SAA Overlap": 0.0,
+            "Schedule Factor": 0.9,
+            "Quality Factor": 0.8,
+            "Comments": "",
+        }])
+        schedule_path = tmp_path / "schedule.csv"
+        schedule_df.to_csv(schedule_path, index=False)
+
+        inputs = science_calendar.ScienceCalendarInputs(
+            schedule_csv=schedule_path,
+            data_dir=data_dir,
+        )
+        config = PandoraSchedulerConfig(
+            window_start=datetime(2026, 1, 1),
+            window_end=datetime(2026, 1, 2),
+        )
+
+        builder = science_calendar._ScienceCalendarBuilder(inputs, config)
+        result = builder._get_occultation_time_limit("OccA")
+        assert result == timedelta(hours=600)
 
 
 class TestOccultationTimeTracking:
@@ -71,9 +230,12 @@ class TestOccultationTimeTracking:
         pd.DataFrame({"Star Name": [], "RA": [], "DEC": []}).to_csv(
             data_dir / "all_targets.csv", index=False
         )
-        pd.DataFrame({"Star Name": ["OccStar"], "RA": [10.0], "DEC": [20.0]}).to_csv(
-            data_dir / "occultation-standard_targets.csv", index=False
-        )
+        pd.DataFrame({
+            "Star Name": ["OccStar"],
+            "RA": [10.0],
+            "DEC": [20.0],
+            "Number of Hours Requested": [600],
+        }).to_csv(data_dir / "occultation-standard_targets.csv", index=False)
 
         # Create minimal schedule
         schedule_df = pd.DataFrame([{
@@ -96,7 +258,6 @@ class TestOccultationTimeTracking:
         config = PandoraSchedulerConfig(
             window_start=datetime(2026, 1, 1),
             window_end=datetime(2026, 1, 2),
-            occultation_deprioritization_hours=8.0,
         )
 
         builder = science_calendar._ScienceCalendarBuilder(inputs, config)
@@ -104,7 +265,6 @@ class TestOccultationTimeTracking:
         # Check that time tracking is initialized
         assert hasattr(builder, "occultation_obs_time")
         assert builder.occultation_obs_time == {}
-        assert builder.default_occultation_time_limit == timedelta(hours=8.0)
 
 
 class TestBuildOccultationScheduleExclusion:
@@ -233,8 +393,8 @@ class TestOccultationDeprioritizationIntegration:
         )
 
         pd.DataFrame([
-            {"Star Name": "OccA", "RA": 30.0, "DEC": 15.0, "Priority": 0.9},
-            {"Star Name": "OccB", "RA": 35.0, "DEC": 20.0, "Priority": 0.8},
+            {"Star Name": "OccA", "RA": 30.0, "DEC": 15.0, "Priority": 0.9, "Number of Hours Requested": 0.5},
+            {"Star Name": "OccB", "RA": 35.0, "DEC": 20.0, "Priority": 0.8, "Number of Hours Requested": 0.5},
         ]).to_csv(data_dir / "occultation-standard_targets.csv", index=False)
 
         # Create schedule - two visits to allow time accumulation
@@ -267,12 +427,11 @@ class TestOccultationDeprioritizationIntegration:
             schedule_csv=schedule_path,
             data_dir=data_dir,
         )
-        # Very low limit to trigger deprioritization quickly
+        # The low time limit (0.5 hours) is set in manifest for each target
         config = PandoraSchedulerConfig(
             window_start=start,
             window_end=start + timedelta(hours=4),
             visit_limit=2,
-            occultation_deprioritization_hours=0.5,  # 30 minutes
         )
 
         builder = science_calendar._ScienceCalendarBuilder(inputs, config)

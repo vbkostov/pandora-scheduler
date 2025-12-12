@@ -32,8 +32,12 @@ class PandoraSchedulerConfig:
     window_end: datetime
     """End of the scheduling window."""
 
-    obs_window: timedelta = timedelta(hours=24)
-    """Observation window size for scheduling (default: 24 hours)."""
+    schedule_step: timedelta = timedelta(hours=24)
+    """Rolling scheduling step size (default: 24 hours).
+
+    This controls how far the scheduler advances its rolling window each
+    iteration. It is not a per-target visit duration.
+    """
 
     commissioning_days: int = 0
     """Number of commissioning days at start of mission."""
@@ -63,13 +67,6 @@ class PandoraSchedulerConfig:
 
     deprioritization_limit_hours: float = 48.0
     """Deprioritize auxiliary targets after this many hours of observation."""
-
-    occultation_deprioritization_hours: float = 8.0
-    """Deprioritize occultation targets after this many hours of observation.
-    
-    This is a global default that applies to all occultation targets.
-    Future enhancement: Support per-target limits via 'Number of Hours Requested' column.
-    """
 
     saa_overlap_threshold: float = 0.0
     """Maximum acceptable SAA overlap fraction (0-1)."""

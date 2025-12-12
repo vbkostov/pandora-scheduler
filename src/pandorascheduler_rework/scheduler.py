@@ -164,7 +164,7 @@ def run_scheduler(
     schedule_rows: list[pd.DataFrame] = []
 
     start = sched_start
-    stop = start + config.obs_window
+    stop = start + config.schedule_step
 
     progress_bar = None
     previous_start = start
@@ -224,7 +224,6 @@ def run_scheduler(
             sched_start,
             sched_stop,
             obs_range,
-            config.obs_window,
             list(config.transit_scheduling_weights),
             config.transit_coverage_min,
             inputs.paths.targets_dir,
@@ -250,7 +249,7 @@ def run_scheduler(
             if not too_df.empty:
                 schedule_rows.append(too_df)
             start = new_start
-            stop = start + config.obs_window
+            stop = start + config.schedule_step
             advance_progress(start)
             continue
 
@@ -266,7 +265,7 @@ def run_scheduler(
                 schedule_rows.append(aux_df)
             logger.info(f"{log_info}; window {start} to {stop}")
             start = stop
-            stop = start + config.obs_window
+            stop = start + config.schedule_step
             advance_progress(start)
             continue
 
@@ -280,7 +279,7 @@ def run_scheduler(
         )
         schedule_rows.append(scheduled_visit)
         start = scheduled_visit["Observation Stop"].iloc[-1]
-        stop = start + config.obs_window
+        stop = start + config.schedule_step
         advance_progress(start)
 
     schedule = (
@@ -654,7 +653,7 @@ def _handle_targets_of_opportunity(
         # Use per-target visit duration and edge buffer for ToO overlap check
         planet_name_str = str(planet_name)
         visit_duration = observation_utils.get_target_visit_duration(
-            planet_name_str, inputs.target_list, config.obs_window
+            planet_name_str, inputs.target_list
         )
         edge_buffer = observation_utils.compute_edge_buffer(
             visit_duration,
@@ -732,7 +731,7 @@ def _handle_targets_of_opportunity(
         # Use per-target visit duration and edge buffer
         planet_name_str = str(planet_name)
         visit_duration = observation_utils.get_target_visit_duration(
-            planet_name_str, inputs.target_list, config.obs_window
+            planet_name_str, inputs.target_list
         )
         edge_buffer = observation_utils.compute_edge_buffer(
             visit_duration,
@@ -1089,8 +1088,10 @@ def _schedule_primary_target(
     # Use per-target visit duration from candidate (already computed in check_if_transits_in_obs_window)
     visit_duration = first_row.get("Visit Duration")
     if visit_duration is None or pd.isna(visit_duration):
-        # Fallback to config default
-        visit_duration = config.obs_window
+        raise ValueError(
+            f"Missing Visit Duration for scheduled target '{planet_name}'. "
+            "Expected per-target 'Obs Window (hrs)' to be present and valid."
+        )
     elif isinstance(visit_duration, pd.Timedelta):
         visit_duration = visit_duration.to_pytimedelta()
     

@@ -145,10 +145,13 @@ def parse_args() -> argparse.Namespace:
 
     # Scheduling configuration
     parser.add_argument(
-        "--obs-window",
+        "--schedule-step-hours",
         type=float,
         default=24.0,
-        help="Observation window size in hours (default: 24.0)",
+        help=(
+            "Scheduler rolling window step size in hours (default: 24.0). "
+            "Per-target visit duration comes from target manifests (Obs Window (hrs))."
+        ),
     )
     parser.add_argument(
         "--transit-coverage",
@@ -342,7 +345,9 @@ def main() -> int:
             logger.warning("Visibility generation requested but no GMAT ephemeris provided.")
 
         # Build PandoraSchedulerConfig with the dataclass field names and types
-        obs_window_hours = float(get_val("obs_window_hours", args.obs_window, 24.0))
+        schedule_step_hours = float(
+            get_val("schedule_step_hours", args.schedule_step_hours, 24.0)
+        )
         transit_cov = float(get_val("transit_coverage_min", args.transit_coverage, 0.4))
         min_vis = float(get_val("min_visibility", args.min_visibility, 0.5))
 
@@ -379,7 +384,7 @@ def main() -> int:
         config = PandoraSchedulerConfig(
             window_start=parse_datetime(args.start),
             window_end=parse_datetime(args.end),
-            obs_window=timedelta(hours=obs_window_hours),
+            schedule_step=timedelta(hours=schedule_step_hours),
             targets_manifest=args.output / "data",
             gmat_ephemeris=gmat_path,
             output_dir=args.output,

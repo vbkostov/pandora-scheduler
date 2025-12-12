@@ -46,12 +46,17 @@ class TransitUnschedulableError(ValueError):
     pass
 
 
+class MissingObsWindowError(ValueError):
+    """Raised when a required per-target observation window is missing."""
+
+    pass
+
+
 def get_target_visit_duration(
     planet_name: str,
     target_list: pd.DataFrame,
-    default: timedelta,
 ) -> timedelta:
-    """Return visit duration from 'Obs Window (hrs)' column, or default.
+    """Return visit duration from the required 'Obs Window (hrs)' column.
 
     Parameters
     ----------
@@ -59,42 +64,41 @@ def get_target_visit_duration(
         Name of the planet to look up.
     target_list
         DataFrame containing target definitions with 'Planet Name' column.
-    default
-        Fallback duration if column is missing or value is invalid.
-
     Returns
     -------
     timedelta
         The visit duration for this target.
     """
     if _OBS_WINDOW_COLUMN not in target_list.columns:
-        return default
+        raise MissingObsWindowError(
+            f"Target list is missing required column '{_OBS_WINDOW_COLUMN}'"
+        )
 
     mask = target_list["Planet Name"] == planet_name
     if not mask.any():
-        return default
+        raise MissingObsWindowError(
+            f"Target '{planet_name}' not present in target list"
+        )
 
     value = target_list.loc[mask, _OBS_WINDOW_COLUMN].iloc[0]
     if pd.isna(value):
-        return default
+        raise MissingObsWindowError(
+            f"Target '{planet_name}' has missing '{_OBS_WINDOW_COLUMN}' value"
+        )
 
     try:
         hours = float(value)
-        if hours <= 0:
-            LOGGER.warning(
-                "Invalid Obs Window (hrs) for %s: %s, using default",
-                planet_name,
-                value,
-            )
-            return default
-        return timedelta(hours=hours)
-    except (TypeError, ValueError):
-        LOGGER.warning(
-            "Cannot parse Obs Window (hrs) for %s: %s, using default",
-            planet_name,
-            value,
+    except (TypeError, ValueError) as exc:
+        raise MissingObsWindowError(
+            f"Target '{planet_name}' has unparseable '{_OBS_WINDOW_COLUMN}' value: {value}"
+        ) from exc
+
+    if hours <= 0:
+        raise MissingObsWindowError(
+            f"Target '{planet_name}' has invalid '{_OBS_WINDOW_COLUMN}' value: {value}"
         )
-        return default
+
+    return timedelta(hours=hours)
 
 
 def compute_edge_buffer(
@@ -546,7 +550,6 @@ def check_if_transits_in_obs_window(
     sched_start: datetime,
     sched_stop: datetime,
     obs_rng: pd.DatetimeIndex,
-    obs_window: timedelta,
     transit_scheduling_weights: Sequence[float],
     transit_coverage_min: float,
     targets_dir: Path,
@@ -647,9 +650,7 @@ def check_if_transits_in_obs_window(
         stop_series = stop_series.dt.floor("min")
 
         # Get per-target visit duration and compute edge buffer
-        visit_duration = get_target_visit_duration(
-            str(planet_name), target_list, obs_window
-        )
+        visit_duration = get_target_visit_duration(str(planet_name), target_list)
         edge_buffer = compute_edge_buffer(
             visit_duration,
             short_visit_threshold_hours,

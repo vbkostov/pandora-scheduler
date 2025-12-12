@@ -1,7 +1,7 @@
 {
   "#": "Example scheduler JSON. Use with --config <thisfile>. Keys: CLI values override JSON when provided.",
 
-  "obs_window_hours": 24.0,
+  "schedule_step_hours": 24.0,
   "transit_coverage_min": 0.4,
   "min_visibility": 0.5,
 
