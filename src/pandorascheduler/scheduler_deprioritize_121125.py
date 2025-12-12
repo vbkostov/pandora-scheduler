@@ -237,6 +237,10 @@ def Schedule(
     trans_priority = pd.DataFrame(trans_priority, columns=["Transit Priority"])
     tracker = pd.concat([tracker, trans_priority], axis=1)
 
+    tracker_bak = tracker.copy()
+    tracker_sec = tracker[tracker['Primary Target'] == 0].reset_index(drop=True).copy()
+    tracker = tracker[tracker['Primary Target'] == 1].reset_index(drop=True).copy()
+
     ### Begin scheduling
     start = sched_start
     stop = start + obs_window
@@ -270,6 +274,7 @@ def Schedule(
 
         logger.debug("Evaluating window %s to %s", start, stop)
         tracker = tracker.sort_values(by=['Primary Target', 'Transit Priority'], ascending=[False, True]).reset_index(drop=True)
+
         obs_rng = pd.date_range(start, stop, freq="min")
         temp_df = pd.DataFrame(
             [],
@@ -392,8 +397,26 @@ def Schedule(
         ### Check if there's no transit occurring during the observing window
         ### Schedule auxiliary observation if possible
         if len(temp_df) == 0:
-            aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, stop, aux_key, tracker, \
-                non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
+
+            fn_tmp = '/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/exoplanet_targets.csv'
+            metadata_tmp = pd.read_csv(fn_tmp)
+            obs_window_non_primary = metadata_tmp[['Planet Name', 'Obs Window (hrs)']]
+            sched_df_sec = helper_codes.schedule_secondary_exoplanets(tracker_sec, start, stop, obs_window_non_primary, transit_coverage_min)
+
+            if len(sched_df_sec) > 0:
+                sort_windows = np.sort([start, pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), stop])
+
+                aux_df_1, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(sort_windows[0], sort_windows[1], aux_key, \
+                    non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
+
+                aux_df_2, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(sort_windows[2], sort_windows[3], aux_key, \
+                    non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
+
+                aux_df = pd.concat([aux_df_1, sched_df_sec, aux_df_2], axis=0)
+
+            else:
+                aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, stop, aux_key, \
+                    non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
 
             if sched_df.empty:
                 sched_df = aux_df.copy()
@@ -452,8 +475,26 @@ def Schedule(
             # VK END
 
             if obs_rng[0] < obs_start: # primary target not visible for some time at the start of the visit --> find auxiliary target for that time
-                aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, obs_start, aux_key, tracker, \
-                    non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
+                
+                fn_tmp = '/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/exoplanet_targets.csv'
+                metadata_tmp = pd.read_csv(fn_tmp)
+                obs_window_non_primary = metadata_tmp[['Planet Name', 'Obs Window (hrs)']]
+                sched_df_sec = helper_codes.schedule_secondary_exoplanets(tracker_sec, obs_rng[0], obs_start, obs_window_non_primary, transit_coverage_min)
+
+                if len(sched_df_sec) > 0:
+                    sort_windows = np.sort([obs_rng[0], pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), obs_start])
+
+                    aux_df_1, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(sort_windows[0], sort_windows[1], aux_key, \
+                        non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
+
+                    aux_df_2, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(sort_windows[2], sort_windows[3], aux_key, \
+                        non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
+
+                    aux_df = pd.concat([aux_df_1, sched_df_sec, aux_df_2], axis=0)
+
+                else:
+                    aux_df, log_info, non_primary_obs_time, last_std_obs = Schedule_aux(start, obs_start, aux_key, \
+                        non_primary_obs_time=non_primary_obs_time, min_visibility = min_visibility, last_std_obs = last_std_obs)
                 
                 if sched_df.empty:
                     sched_df = aux_df.copy()
@@ -480,7 +521,7 @@ def Schedule(
                     saa_cover,
                     s_factor,
                     q_factor,
-                    np.nan,
+                    'Primary Exoplanet',
                 ]
             ]
             sched = pd.DataFrame(
@@ -567,7 +608,7 @@ def Schedule(
 
     return tracker
 
-def Schedule_aux(start, stop, aux_key, tracker, non_primary_obs_time, min_visibility, last_std_obs, **kwargs):
+def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, last_std_obs, **kwargs):
 
     obs_rng = pd.date_range(start, stop, freq = "min")
 
@@ -675,42 +716,40 @@ def Schedule_aux(start, stop, aux_key, tracker, non_primary_obs_time, min_visibi
         vis_any_targs = []
         targ_vis = []
 
-        sec_exoplanet_targets = tracker[tracker['Primary Target'] != 1]
-        for i in range(len(sec_exoplanet_targets)):
-            planet_name = sec_exoplanet_targets["Planet Name"].iloc[i]
-            star_name = planet_name[0:-1]
-            planet_data = pd.read_csv(
-                f"{PACKAGEDIR}/data/targets/{star_name}/{planet_name}/Visibility for {planet_name}.csv"
-            )
-            planet_data = planet_data.drop(
-                planet_data.index[(planet_data["Transit_Coverage"] < transit_coverage_min)]
-            ).reset_index(drop=True)
+        # sec_exoplanet_targets = tracker[tracker['Primary Target'] != 1]
+        # for i in range(len(sec_exoplanet_targets)):
+        #     planet_name = sec_exoplanet_targets["Planet Name"].iloc[i]
+        #     star_name = planet_name[0:-1]
+        #     planet_data = pd.read_csv(
+        #         f"{PACKAGEDIR}/data/targets/{star_name}/{planet_name}/Visibility for {planet_name}.csv"
+        #     )
+        #     planet_data = planet_data.drop(
+        #         planet_data.index[(planet_data["Transit_Coverage"] < transit_coverage_min)]
+        #     ).reset_index(drop=True)
 
-            # Use pre-converted datetime if available (performance optimization)
-            if "Transit_Start_UTC" in planet_data.columns:
-                start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"])#.to_numpy()
-            else:
-                # Fallback to MJD conversion for backward compatibility
-                start_transits = Time(
-                    planet_data["Transit_Start"], format="mjd", scale="utc").to_value("datetime")
+        #     # Use pre-converted datetime if available (performance optimization)
+        #     if "Transit_Start_UTC" in planet_data.columns:
+        #         start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"])#.to_numpy()
+        #     else:
+        #         # Fallback to MJD conversion for backward compatibility
+        #         start_transits = Time(
+        #             planet_data["Transit_Start"], format="mjd", scale="utc").to_value("datetime")
             
-            if "Transit_Stop_UTC" in planet_data.columns:
-                end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"])#.to_numpy()
-            else:
-                # Fallback to MJD conversion for backward compatibility
-                end_transits = Time(
-                    planet_data["Transit_Stop"], format="mjd", scale="utc").to_value("datetime")
+        #     if "Transit_Stop_UTC" in planet_data.columns:
+        #         end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"])#.to_numpy()
+        #     else:
+        #         # Fallback to MJD conversion for backward compatibility
+        #         end_transits = Time(
+        #             planet_data["Transit_Stop"], format="mjd", scale="utc").to_value("datetime")
 
-            p_trans = planet_data.index[
-                (start <= start_transits) & (end_transits <= stop)
-            ]
+        #     p_trans = planet_data.index[
+        #         (start <= start_transits) & (end_transits <= stop)
+        #     ]
 
-            if len(p_trans) > 0:
-                break
-            else:
-                print(f'no secondary exoplanet transits {start} to {stop}')
-
-
+        #     if len(p_trans) > 0:
+        #         break
+        #     else:
+        #         print(f'no secondary exoplanet transits {start} to {stop}')
 
         for n in tqdm(range(len(names)), desc=f"Finding visible non-primary target for {str(start)} to {str(stop)} from '{target_definition_files[tdf_idx]}'"):
 
@@ -967,9 +1006,9 @@ def Schedule_all_scratch(
 if __name__ == "__main__":
 
     obs_window = timedelta(hours=24.0)
-    pandora_start = "2026-02-11 00:00:00"
+    pandora_start = "2026-02-05 00:00:00"
     pandora_stop = "2027-02-05 00:00:00"
-    sched_start= "2026-02-11 00:00:00"
+    sched_start= "2026-02-05 00:00:00"
     sched_stop= "2027-02-05 00:00:00"
 
     commissioning_time_ = 0  # days
@@ -992,6 +1031,7 @@ if __name__ == "__main__":
     update_target_list_as_per_json_files = True
     if update_target_list_as_per_json_files:
         target_definition_files = ['exoplanet', 'auxiliary-standard', 'monitoring-standard', 'occultation-standard']
+        # target_definition_files = ['primary-exoplanet', 'auxiliary-standard', 'monitoring-standard', 'occultation-standard']
 
         for keyword_ in target_definition_files:
             fn_tmp = f"{PACKAGEDIR}/data/{keyword_}_targets.csv"

@@ -1115,8 +1115,8 @@ def create_aux_list(target_definition_files, PACKAGEDIR):
 def check_if_transits_in_obs_window(tracker, temp_df, target_list, start, pandora_start, pandora_stop, \
     sched_start, sched_stop, obs_rng, obs_window, sched_wts, transit_coverage_min):
     for i in range(len(tracker)):
-        planet_name = tracker["Planet Name"][i]
-        ra_tar, dec_tar = tracker["RA"][i], tracker["DEC"][i]
+        planet_name = tracker["Planet Name"].iloc[i]
+        ra_tar, dec_tar = tracker["RA"].iloc[i], tracker["DEC"].iloc[i]
 
         if (
             tracker.loc[(tracker["Planet Name"] == planet_name), "Transits Needed"][
@@ -1530,3 +1530,77 @@ def remove_short_sequences(array: Sequence[float], sequence_too_short: int):
 
     return cleaned, positions
 
+def schedule_secondary_exoplanets(tracker, start, stop, obs_windows, transit_coverage_min):
+    secondary_targets = tracker#[tracker['Primary Target'] == 0].reset_index(drop=True)
+    for i, row in secondary_targets.iterrows():
+    
+        planet_name = secondary_targets["Planet Name"].iloc[i]
+        star_name = planet_name[0:-1]
+
+        obs_window = timedelta(hours = obs_windows[obs_windows['Planet Name'] == planet_name]['Obs Window (hrs)'].iloc[0])
+        planet_data = pd.read_csv(
+            f"{PACKAGEDIR}/data/targets/{star_name}/{planet_name}/Visibility for {planet_name}.csv"
+        )
+        planet_data = planet_data.drop(
+            planet_data.index[(planet_data["Transit_Coverage"] < transit_coverage_min)]
+        ).reset_index(drop=True)
+
+        # Use pre-converted datetime if available (performance optimization)
+        if "Transit_Start_UTC" in planet_data.columns:
+            start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"])#.to_numpy()
+        else:
+            # Fallback to MJD conversion for backward compatibility
+            start_transits = Time(
+                planet_data["Transit_Start"], format="mjd", scale="utc").to_value("datetime")
+        
+        if "Transit_Stop_UTC" in planet_data.columns:
+            end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"])#.to_numpy()
+        else:
+            # Fallback to MJD conversion for backward compatibility
+            end_transits = Time(
+                planet_data["Transit_Stop"], format="mjd", scale="utc").to_value("datetime")
+
+        # print(i, planet_name, start_transits, end_transits)
+
+        transit_dur_hrs = (end_transits - start_transits)
+        t0 = start_transits + 0.5*transit_dur_hrs
+        # obs_window = timedelta(hours = 6)
+
+        p_trans = planet_data.index[
+            (start <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= stop)
+        ]
+
+        if len(p_trans) > 0:
+
+            sched = pd.DataFrame({
+                "Target": [planet_name],
+                "RA": [secondary_targets['RA'].iloc[i]],
+                "DEC": [secondary_targets['DEC'].iloc[i]],
+                "Observation Start": [(t0[p_trans] - 0.5*obs_window).iloc[0].strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Start_UTC'].iloc[0]],
+                "Observation Stop": [(t0[p_trans] + 0.5*obs_window).iloc[0].strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Stop_UTC'].iloc[0]],
+                "Transit Coverage": [planet_data.iloc[p_trans]['Transit_Coverage'].iloc[0]],
+                "SAA Overlap": [planet_data.iloc[p_trans]['SAA_Overlap'].iloc[0]],
+                "Schedule Factor": [np.nan],
+                "Quality Factor": [np.nan],
+                "Comments": ['Non-primary Exoplanet']
+            })
+            
+            break
+        
+        else:
+            sched = pd.DataFrame(
+                [],
+                columns=[
+                    "Planet Name",
+                    "Obs Start",
+                    "Obs Gap Time",
+                    "Transit Coverage",
+                    "SAA Overlap",
+                    "Schedule Factor",
+                    "Transit Factor",
+                    "Quality Factor",
+                    "Comments",
+                ],
+            )
+
+    return sched
