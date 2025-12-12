@@ -64,6 +64,13 @@ class PandoraSchedulerConfig:
     deprioritization_limit_hours: float = 48.0
     """Deprioritize auxiliary targets after this many hours of observation."""
 
+    occultation_deprioritization_hours: float = 8.0
+    """Deprioritize occultation targets after this many hours of observation.
+    
+    This is a global default that applies to all occultation targets.
+    Future enhancement: Support per-target limits via 'Number of Hours Requested' column.
+    """
+
     saa_overlap_threshold: float = 0.0
     """Maximum acceptable SAA overlap fraction (0-1)."""
 

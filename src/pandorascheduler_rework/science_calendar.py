@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from numbers import Number
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 from xml.dom import minidom
 
 import numpy as np
@@ -96,6 +96,12 @@ class _ScienceCalendarBuilder:
         )
         self.sequence_duration = timedelta(minutes=obs_minutes)
         self.occultation_limit = timedelta(minutes=occ_minutes + 1)
+
+        # Track cumulative observation time for each occultation target
+        self.occultation_obs_time: Dict[str, timedelta] = {}
+        self.occultation_time_limit = timedelta(
+            hours=config.occultation_deprioritization_hours
+        )
 
     def build_calendar(self) -> ET.Element:
         root = ET.Element("ScienceCalendar", xmlns="/pandora/calendar/")
@@ -350,6 +356,20 @@ class _ScienceCalendarBuilder:
                         break
 
                     occ_target = str(occ_df.iloc[oc_index]["Target"])
+                    
+                    # Check if this occultation target has exceeded its time limit
+                    current_occ_time = self.occultation_obs_time.get(
+                        occ_target, timedelta()
+                    )
+                    if current_occ_time >= self.occultation_time_limit:
+                        LOGGER.info(
+                            "Skipping %s: exceeded occultation time limit (%.1f hrs)",
+                            occ_target,
+                            current_occ_time.total_seconds() / 3600,
+                        )
+                        oc_index += 1
+                        continue
+                    
                     occ_info = _lookup_occultation_info(
                         occ_target,
                         self.target_catalog,
@@ -374,6 +394,14 @@ class _ScienceCalendarBuilder:
                         dec_occ,
                         occ_info if occ_info is not None else pd.DataFrame(),
                     )
+                    
+                    # Track the observation time for this occultation target
+                    sequence_duration = next_value - current
+                    self.occultation_obs_time[occ_target] = (
+                        self.occultation_obs_time.get(occ_target, timedelta())
+                        + sequence_duration
+                    )
+                    
                     seq_counter += 1
                     oc_index += 1
                     current = next_value
@@ -453,6 +481,13 @@ class _ScienceCalendarBuilder:
         if not self.config.use_target_list_for_occultations:
             candidates.reverse()
 
+        # Build set of targets that have exceeded their time limit
+        excluded_targets = {
+            name
+            for name, obs_time in self.occultation_obs_time.items()
+            if obs_time >= self.occultation_time_limit
+        }
+
         for csv_path, label, vis_root in candidates:
             result_df, flag = _build_occultation_schedule(
                 expanded_starts,
@@ -465,6 +500,7 @@ class _ScienceCalendarBuilder:
                 reference_ra,
                 reference_dec,
                 self.config.prioritise_occultations_by_slew,
+                excluded_targets,
             )
             if flag and result_df is not None:
                 return result_df, True
@@ -476,7 +512,14 @@ class _ScienceCalendarBuilder:
         # occultation candidate exists (useful for tests and degraded inputs).
         try:
             if not self.occ_catalog.empty and "Star Name" in self.occ_catalog.columns:
-                first_row = self.occ_catalog.iloc[0]
+                # Filter out excluded targets from fallback too
+                available = self.occ_catalog[
+                    ~self.occ_catalog["Star Name"].isin(excluded_targets)
+                ]
+                if available.empty:
+                    LOGGER.warning("All occultation targets have exceeded time limit")
+                    return None
+                first_row = available.iloc[0]
                 target_name = first_row.get("Star Name")
                 ra = first_row.get("RA") if "RA" in first_row.index else float("nan")
                 dec = first_row.get("DEC") if "DEC" in first_row.index else float("nan")
@@ -759,6 +802,7 @@ def _build_occultation_schedule(
     reference_ra: float,
     reference_dec: float,
     prioritise_by_slew: bool,
+    excluded_targets: Optional[set] = None,
 ) -> tuple[Optional[pd.DataFrame], bool]:
     if not starts or not stops:
         return None, False
@@ -781,6 +825,23 @@ def _build_occultation_schedule(
         occ_list = read_csv_cached(str(list_path))
     except FileNotFoundError:
         LOGGER.warning("Occultation list missing: %s", list_path)
+        return None, False
+
+    # Filter out excluded targets (those that have exceeded their time limit)
+    if excluded_targets and "Star Name" in occ_list.columns:
+        before_count = len(occ_list)
+        occ_list = occ_list[~occ_list["Star Name"].isin(excluded_targets)].reset_index(
+            drop=True
+        )
+        if len(occ_list) < before_count:
+            LOGGER.debug(
+                "Excluded %d occultation targets that exceeded time limit",
+                before_count - len(occ_list),
+            )
+
+    # If no targets remain after exclusion, fail early
+    if occ_list.empty:
+        LOGGER.warning("No occultation targets available after exclusion filter")
         return None, False
 
     if prioritise_by_slew:
