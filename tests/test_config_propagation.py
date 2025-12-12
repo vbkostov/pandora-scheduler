@@ -92,7 +92,7 @@ class TestConfigParameterPropagation:
         )
         # Create auxiliary catalogs expected by the calendar builder
         pd.DataFrame([{"Star Name": "Test", "RA": 0, "DEC": 0}]).to_csv(
-            data_dir / "aux_list_new.csv", index=False
+            data_dir / "all_targets.csv", index=False
         )
         pd.DataFrame([{"Star Name": "Test", "RA": 0, "DEC": 0}]).to_csv(
             data_dir / "occultation-standard_targets.csv", index=False

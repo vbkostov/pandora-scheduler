@@ -764,7 +764,7 @@ def process_target_files(keyword: str, *, base_path: Path) -> pd.DataFrame:
 
 
 def create_aux_list(target_definition_files: Sequence[str], package_dir):
-    """Build ``aux_list_new.csv`` from the provided target manifest CSVs.
+    """Build ``all_targets.csv`` from the provided target manifest CSVs.
 
     The legacy helper concatenated the partner target lists that share a common
     column set.  Reimplement the same behaviour explicitly to avoid importing
@@ -785,7 +785,7 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
 
     if not csv_paths:
         raise FileNotFoundError(
-            "No target definition CSVs found; unable to build aux_list_new.csv"
+            "No target definition CSVs found; unable to build all_targets.csv"
         )
 
     dataframes = [pd.read_csv(path) for path in csv_paths]
