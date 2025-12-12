@@ -730,7 +730,7 @@ def schedule_secondary_exoplanets(tracker, start, stop, obs_windows, transit_cov
         # obs_window = timedelta(hours = 6)
 
         p_trans = planet_data.index[
-            (start <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= stop)
+            (pd.to_datetime(start) <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= pd.to_datetime(stop))
         ]
 
         if len(p_trans) > 0:
