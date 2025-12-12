@@ -429,7 +429,7 @@ def Schedule(
                 for _, row in aux_df.iterrows():
                     if row['Target'] != "Free Time":
                         aux_target = row['Target']
-                        aux_duration = row['Observation Stop'] - row['Observation Start']
+                        aux_duration = pd.to_datetime(row['Observation Stop']) - pd.to_datetime(row['Observation Start'])
                         all_target_obs_time[aux_target] = all_target_obs_time.get(aux_target, timedelta()) + aux_duration
 
             logger.info(log_info, start, stop)
