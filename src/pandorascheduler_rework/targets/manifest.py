@@ -236,8 +236,8 @@ def _apply_priority(
                 f"Target '{filename}' not present in {category} priority table"
             )
         row["Priority"] = float(match["priority"].iloc[0])
-        # Only add Number of Hours Requested for non-occultation standard categories
-        if category != _OCCULTATION_CATEGORY:
+        # Add Number of Hours Requested from priority table
+        if "hours_req" in match.columns:
             row["Number of Hours Requested"] = int(
                 round(float(match["hours_req"].iloc[0]))
             )

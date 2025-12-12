@@ -104,7 +104,7 @@ class TestOccultationTimeTracking:
         # Check that time tracking is initialized
         assert hasattr(builder, "occultation_obs_time")
         assert builder.occultation_obs_time == {}
-        assert builder.occultation_time_limit == timedelta(hours=8.0)
+        assert builder.default_occultation_time_limit == timedelta(hours=8.0)
 
 
 class TestBuildOccultationScheduleExclusion:

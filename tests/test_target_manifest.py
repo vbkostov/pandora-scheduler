@@ -88,9 +88,17 @@ def test_manifest_matches_legacy(category: str, monkeypatch: pytest.MonkeyPatch)
     assert isinstance(legacy_df, pd.DataFrame)
     assert isinstance(rework_df, pd.DataFrame)
 
-    assert set(legacy_df.columns) == set(rework_df.columns)
-
-    rework_df = rework_df[legacy_df.columns]
+    # For occultation-standard, rework intentionally adds "Number of Hours Requested"
+    # which was missing in legacy code (bug fix - the priority table has hours_req)
+    if category == "occultation-standard":
+        expected_extra = {"Number of Hours Requested"}
+        assert set(rework_df.columns) - set(legacy_df.columns) == expected_extra
+        # Compare only common columns
+        common_cols = list(legacy_df.columns)
+        rework_df = rework_df[common_cols]
+    else:
+        assert set(legacy_df.columns) == set(rework_df.columns)
+        rework_df = rework_df[legacy_df.columns]
 
     sort_key = "Original Filename" if "Original Filename" in legacy_df.columns else "Star Name"
     legacy_sorted = legacy_df.sort_values(by=sort_key).reset_index(drop=True)

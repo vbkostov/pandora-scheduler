@@ -99,9 +99,24 @@ class _ScienceCalendarBuilder:
 
         # Track cumulative observation time for each occultation target
         self.occultation_obs_time: Dict[str, timedelta] = {}
-        self.occultation_time_limit = timedelta(
+        # Default time limit (used when per-target value not available)
+        self.default_occultation_time_limit = timedelta(
             hours=config.occultation_deprioritization_hours
         )
+
+    def _get_occultation_time_limit(self, target_name: str) -> timedelta:
+        """Get the time limit for an occultation target.
+        
+        Uses per-target 'Number of Hours Requested' from manifest if available,
+        otherwise falls back to the global default.
+        """
+        if self.occ_catalog is not None and not self.occ_catalog.empty:
+            match = self.occ_catalog[self.occ_catalog["Star Name"] == target_name]
+            if not match.empty and "Number of Hours Requested" in match.columns:
+                hours_req = match.iloc[0]["Number of Hours Requested"]
+                if pd.notna(hours_req):
+                    return timedelta(hours=float(hours_req))
+        return self.default_occultation_time_limit
 
     def build_calendar(self) -> ET.Element:
         root = ET.Element("ScienceCalendar", xmlns="/pandora/calendar/")
@@ -361,11 +376,13 @@ class _ScienceCalendarBuilder:
                     current_occ_time = self.occultation_obs_time.get(
                         occ_target, timedelta()
                     )
-                    if current_occ_time >= self.occultation_time_limit:
+                    target_time_limit = self._get_occultation_time_limit(occ_target)
+                    if current_occ_time >= target_time_limit:
                         LOGGER.info(
-                            "Skipping %s: exceeded occultation time limit (%.1f hrs)",
+                            "Skipping %s: exceeded occultation time limit (%.1f/%.1f hrs)",
                             occ_target,
                             current_occ_time.total_seconds() / 3600,
+                            target_time_limit.total_seconds() / 3600,
                         )
                         oc_index += 1
                         continue
@@ -485,7 +502,7 @@ class _ScienceCalendarBuilder:
         excluded_targets = {
             name
             for name, obs_time in self.occultation_obs_time.items()
-            if obs_time >= self.occultation_time_limit
+            if obs_time >= self._get_occultation_time_limit(name)
         }
 
         for csv_path, label, vis_root in candidates:
