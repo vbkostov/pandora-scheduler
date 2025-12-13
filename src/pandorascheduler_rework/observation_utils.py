@@ -586,6 +586,10 @@ def save_observation_time_report(
                 handle.write(f"{label},{is_primary},,{hours:.2f},\n")
                 continue
 
+            if label == "STD" or label.endswith(" STD"):
+                handle.write(f"{label},{is_primary},,{hours:.2f},\n")
+                continue
+
             if not requested_hours_catalogs:
                 raise ValueError(
                     "Cannot report requested-vs-scheduled hours: "

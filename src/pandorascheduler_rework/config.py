@@ -65,12 +65,6 @@ class PandoraSchedulerConfig:
     min_visibility: float = 0.0
     """Minimum visibility fraction to consider observable."""
 
-    deprioritization_limit_hours: float = 48.0
-    """Deprioritize auxiliary targets after this many hours of observation."""
-
-    saa_overlap_threshold: float = 0.0
-    """Maximum acceptable SAA overlap fraction (0-1)."""
-
     # ============================================================================
     # TRANSIT EDGE BUFFER PARAMETERS
     # ============================================================================
@@ -217,10 +211,3 @@ class PandoraSchedulerConfig:
                 % (self.transit_coverage_min,)
             )
 
-    # ============================================================================
-    # CONVERSION METHODS (Removed)
-    # ============================================================================
-    # The legacy conversion methods (to_scheduler_config, to_science_calendar_config,
-    # to_visibility_config) have been removed as part of the configuration
-    # consolidation. Downstream components now accept PandoraSchedulerConfig
-    # directly.

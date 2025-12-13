@@ -49,13 +49,11 @@ class TestConfigParameterPropagation:
             window_start=datetime(2026, 1, 1),
             window_end=datetime(2026, 1, 2),
             transit_coverage_min=0.35,  # Non-default
-            deprioritization_limit_hours=48.0,  # Non-default
             aux_sort_key="closest",  # Non-default
         )
         
         # Verify config has the parameters we set
         assert config.transit_coverage_min == 0.35
-        assert config.deprioritization_limit_hours == 48.0
         assert config.aux_sort_key == "closest"
     
     def test_science_calendar_receives_config_parameters(self, tmp_path):

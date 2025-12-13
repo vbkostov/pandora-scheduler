@@ -905,136 +905,193 @@ def _schedule_auxiliary_target(
 
     selected_row: Optional[list] = None
     priority_val = 0.0
-    priority_baseline = 0.0
     log_info = "No fuly or partially visible non-primary targets, Free Time..."
-
-    deprioritization_limit = timedelta(hours=config.deprioritization_limit_hours)
+    selected_requested_hours: float | None = None
+    selected_observed_hours: float | None = None
+    fallback_over_requested_used = False
     non_primary_priorities = {
         name: stats.last_priority
         for name, stats in state.non_primary_obs_time.items()
         if not name.endswith("STD")
     }
 
-    for target_def in inputs.target_definition_files[1:]:
-        aux_csv = inputs.paths.data_dir / f"{target_def}_targets.csv"
-        if not aux_csv.exists():
-            continue
-
-        aux_targets = read_csv_cached(str(aux_csv))
-        if aux_targets is None:
-            continue
-        aux_targets = aux_targets.reset_index(drop=True)
-
-        mask = aux_targets["Star Name"].isin(non_primary_priorities.keys())
-        if mask.any():
-            mapped_priorities = aux_targets.loc[mask, "Star Name"].apply(
-                lambda value: non_primary_priorities.get(str(value), np.nan)
-            )
-            aux_targets.loc[mask, "Priority"] = mapped_priorities
-
-        if config.aux_sort_key in {"sort_by_tdf_priority", "closest"}:
-            aux_targets = aux_targets.sort_values(
-                "Priority", ascending=False, ignore_index=True
-            )
-        names = aux_targets["Star Name"].tolist()
-        ras = aux_targets["RA"].tolist()
-        decs = aux_targets["DEC"].tolist()
-        priorities = aux_targets["Priority"].tolist()
-
-        vis_all: list[int] = []
-        vis_any: list[int] = []
-        vis_percentages: list[float] = []
-
-        for idx, name in enumerate(names):
-            vis_file = observation_utils.build_star_visibility_path(
-                inputs.paths.aux_targets_dir, name
-            )
-            if not vis_file.is_file():
-                raise FileNotFoundError(
-                    f"Auxiliary target visibility file not found: {vis_file}\n"
-                    f"  Target: {name}\n"
-                    f"  Expected at: {vis_file}"
-                )
-            
-            vis = read_parquet_cached(str(vis_file))
-
-            if vis is None or vis.empty or len(vis) == 0:
-                raise ValueError(
-                    f"Auxiliary target visibility file exists but is empty: {vis_file}\n"
-                    f"  Target: {name}"
-                )
-
-            vis_filtered = _filter_visibility_by_time(
-                vis,
+    for allow_over_requested in (False, True):
+        if selected_row is not None:
+            break
+        if allow_over_requested:
+            logger.warning(
+                "No eligible non-primary targets visible between %s and %s; "
+                "allowing targets that have met requested hours",
                 active_start,
                 stop,
-                use_legacy_mode=config.use_legacy_mode,
             )
 
-            if not vis_filtered.empty and vis_filtered["Visible"].all():
-                vis_all.append(idx)
-                break
-            if not vis_filtered.empty and vis_filtered["Visible"].any():
-                vis_any.append(idx)
-                visibility = 100 * (vis_filtered["Visible"].sum() / len(vis_filtered))
-                vis_percentages.append(visibility)
+        for target_def in inputs.target_definition_files[1:]:
+            aux_csv = inputs.paths.data_dir / f"{target_def}_targets.csv"
+            if not aux_csv.exists():
+                continue
 
-        if vis_all:
+            aux_targets = read_csv_cached(str(aux_csv))
+            if aux_targets is None:
+                continue
+            aux_targets = aux_targets.reset_index(drop=True)
+
+            if "Number of Hours Requested" not in aux_targets.columns:
+                raise ValueError(
+                    "Auxiliary targets catalog is missing required 'Number of Hours Requested' "
+                    f"column: {aux_csv}"
+                )
+
+            requested_hours = pd.to_numeric(
+                aux_targets["Number of Hours Requested"], errors="coerce"
+            )
+            if requested_hours.isna().any():
+                bad = (
+                    aux_targets.loc[requested_hours.isna(), "Star Name"]
+                    .astype(str)
+                    .head(10)
+                    .tolist()
+                )
+                raise ValueError(
+                    "Invalid 'Number of Hours Requested' values in auxiliary targets catalog "
+                    f"{aux_csv}; examples: {bad}"
+                )
+            if (requested_hours <= 0).any():
+                bad = (
+                    aux_targets.loc[
+                        requested_hours <= 0, ["Star Name", "Number of Hours Requested"]
+                    ]
+                    .head(10)
+                    .to_dict(orient="records")
+                )
+                raise ValueError(
+                    "Non-positive 'Number of Hours Requested' values in auxiliary targets catalog "
+                    f"{aux_csv}; examples: {bad}"
+                )
+
+            aux_targets = aux_targets.assign(_requested_hours=requested_hours)
+            aux_targets = aux_targets.assign(
+                _observed_hours=aux_targets["Star Name"].astype(str).map(
+                    lambda label: (
+                        state.non_primary_obs_time.get(str(label)).total_time.total_seconds() / 3600.0
+                        if state.non_primary_obs_time.get(str(label)) is not None
+                        else 0.0
+                    )
+                )
+            )
+            if not allow_over_requested:
+                eligible = aux_targets["_observed_hours"] < aux_targets["_requested_hours"]
+                aux_targets = aux_targets.loc[eligible].reset_index(drop=True)
+
+            if aux_targets.empty:
+                continue
+
+            mask = aux_targets["Star Name"].isin(non_primary_priorities.keys())
+            if mask.any():
+                mapped_priorities = aux_targets.loc[mask, "Star Name"].apply(
+                    lambda value: non_primary_priorities.get(str(value), np.nan)
+                )
+                aux_targets.loc[mask, "Priority"] = mapped_priorities
+
             if config.aux_sort_key in {"sort_by_tdf_priority", "closest"}:
-                chosen_idx = vis_all[0]
-            else:
-                chosen_idx = int(np.random.randint(0, len(vis_all)))
+                aux_targets = aux_targets.sort_values(
+                    "Priority", ascending=False, ignore_index=True
+                )
+            names = aux_targets["Star Name"].tolist()
+            ras = aux_targets["RA"].tolist()
+            decs = aux_targets["DEC"].tolist()
+            priorities = aux_targets["Priority"].tolist()
+
+            vis_all: list[int] = []
+            vis_any: list[int] = []
+            vis_percentages: list[float] = []
+
+            for idx, name in enumerate(names):
+                vis_file = observation_utils.build_star_visibility_path(
+                    inputs.paths.aux_targets_dir, name
+                )
+                if not vis_file.is_file():
+                    raise FileNotFoundError(
+                        f"Auxiliary target visibility file not found: {vis_file}\n"
+                        f"  Target: {name}\n"
+                        f"  Expected at: {vis_file}"
+                    )
+
+                vis = read_parquet_cached(str(vis_file))
+
+                if vis is None or vis.empty or len(vis) == 0:
+                    raise ValueError(
+                        f"Auxiliary target visibility file exists but is empty: {vis_file}\n"
+                        f"  Target: {name}"
+                    )
+
+                vis_filtered = _filter_visibility_by_time(
+                    vis,
+                    active_start,
+                    stop,
+                    use_legacy_mode=config.use_legacy_mode,
+                )
+
+                if not vis_filtered.empty and vis_filtered["Visible"].all():
+                    vis_all.append(idx)
+                    break
+                if not vis_filtered.empty and vis_filtered["Visible"].any():
+                    vis_any.append(idx)
+                    visibility = 100 * (vis_filtered["Visible"].sum() / len(vis_filtered))
+                    vis_percentages.append(visibility)
+
+            chosen_idx: int | None = None
+            best_visibility: float | None = None
+
+            if vis_all:
+                if config.aux_sort_key in {"sort_by_tdf_priority", "closest"}:
+                    chosen_idx = vis_all[0]
+                else:
+                    chosen_idx = int(np.random.randint(0, len(vis_all)))
+                best_visibility = 100.0
+            elif vis_any:
+                any_idx = int(np.asarray(vis_percentages).argmax())
+                best_visibility = vis_percentages[any_idx]
+                if best_visibility >= 100 * config.min_visibility:
+                    chosen_idx = vis_any[any_idx]
+                else:
+                    logger.warning(
+                        "No non-primary target with visibility greater than %.2f%% from %s",
+                        100 * config.min_visibility,
+                        target_def,
+                    )
+
+            if chosen_idx is None:
+                continue
+
             name = names[chosen_idx]
             ra_val = ras[chosen_idx]
             dec_val = decs[chosen_idx]
             priority_val = priorities[chosen_idx]
-            log_info = (
-                f"{name} scheduled for non-primary observation with full visibility."
+            selected_requested_hours = float(aux_targets.loc[chosen_idx, "_requested_hours"])
+            selected_observed_hours = float(aux_targets.loc[chosen_idx, "_observed_hours"])
+            fallback_over_requested_used = (
+                selected_observed_hours >= selected_requested_hours
             )
+
+            if best_visibility is not None and best_visibility >= 100.0:
+                log_info = (
+                    f"{name} scheduled for non-primary observation with full visibility."
+                )
+            else:
+                log_info = (
+                    "No non-primary target with full visibility; "
+                    f"{name} scheduled with {float(best_visibility or 0.0):.2f}% visibility"
+                )
+
             scheduled_rows.append([name, active_start, stop, ra_val, dec_val])
             logger.info(
-                (
-                    "%s scheduled for non-primary observations with "
-                    "full visibility from %s"
-                ),
+                "%s scheduled for non-primary observations from %s",
                 name,
                 target_def,
             )
             selected_row = scheduled_rows[-1]
-            priority_baseline = priorities[-1] if priorities else priority_val
             break
-
-        if vis_any:
-            chosen_idx = int(np.asarray(vis_percentages).argmax())
-            best_visibility = vis_percentages[chosen_idx]
-            if best_visibility >= 100 * config.min_visibility:
-                idx_value = vis_any[chosen_idx]
-                name = names[idx_value]
-                ra_val = ras[idx_value]
-                dec_val = decs[idx_value]
-                priority_val = priorities[idx_value]
-                log_info = (
-                    "No non-primary target with full visibility; "
-                    f"{name} scheduled with {best_visibility:.2f}% visibility"
-                )
-                scheduled_rows.append([name, active_start, stop, ra_val, dec_val])
-                logger.info(
-                    (
-                        "No non-primary target with full visibility; %s "
-                        "scheduled at %.2f%% visibility from %s"
-                    ),
-                    name,
-                    best_visibility,
-                    target_def,
-                )
-                selected_row = scheduled_rows[-1]
-                priority_baseline = priorities[-1] if priorities else priority_val
-                break
-            logger.warning(
-                "No non-primary target with visibility greater than %.2f%% from %s",
-                100 * config.min_visibility,
-                target_def,
-            )
 
     if selected_row is None:
         scheduled_rows.append(
@@ -1046,10 +1103,19 @@ def _schedule_auxiliary_target(
         stats.total_time += stop - active_start
         stats.last_priority = priority_val
 
-        if stats.total_time > deprioritization_limit:
-            logger.warning("Deprioritizing %s due to accumulated auxiliary time", name)
-            baseline = priority_baseline if priority_baseline else priority_val
-            stats.last_priority = 0.95 * float(baseline)
+        if (
+            fallback_over_requested_used
+            and selected_requested_hours is not None
+            and selected_observed_hours is not None
+        ):
+            logger.warning(
+                "Non-primary target %s has met requested observation time "
+                "(observed %.2f h >= requested %.2f h) but is the only visible option; "
+                "scheduling anyway",
+                name,
+                selected_observed_hours,
+                selected_requested_hours,
+            )
 
     result = pd.DataFrame(scheduled_rows, columns=row_columns)
     # Update all_target_obs_time

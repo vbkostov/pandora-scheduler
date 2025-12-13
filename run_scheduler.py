@@ -392,8 +392,6 @@ def main() -> int:
             # Scheduling Thresholds
             transit_coverage_min=transit_cov,
             min_visibility=min_vis,
-            deprioritization_limit_hours=float(json_config.get("deprioritization_limit_hours", 48.0)),
-            saa_overlap_threshold=float(json_config.get("saa_overlap_threshold", 0.0)),
             commissioning_days=int(json_config.get("commissioning_days", 0)),
             
             # Weights
