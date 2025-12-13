@@ -807,10 +807,9 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
         pd.concat(trimmed, ignore_index=True).drop_duplicates().reset_index(drop=True)
     )
 
-    output_path = data_dir / "aux_list_new.csv"
+    output_path = data_dir / "all_targets.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(output_path, index=False)
-
     return output_path
 
 

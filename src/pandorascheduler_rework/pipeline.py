@@ -57,10 +57,11 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
         SchedulerResult with paths to generated files
     """
     if config.output_dir is None:
-        # Should be caught by config validation or caller, but safe fallback
-        output_dir = Path("output")
-    else:
-        output_dir = config.output_dir
+        raise ValueError(
+            "config.output_dir must be set (no default output directory fallback)"
+        )
+
+    output_dir = config.output_dir
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
