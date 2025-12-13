@@ -264,6 +264,14 @@ def run_scheduler(
                     tracker_sec
                 )
 
+            # aux_df, aux_log = _schedule_auxiliary_target(
+            #     start,
+            #     obs_start,
+            #     config,
+            #     state,
+            #     inputs,
+            # )
+
             if not aux_df.empty:
                 schedule_rows.append(aux_df)
             logger.info(f"{log_info}; window {start} to {stop}")
@@ -778,7 +786,8 @@ def _schedule_secondary_exoplanet_and_auxiliary_target(
 
         logger.info(f"Scheduled secondary exoplanet {sched_df_sec['Target'].iloc[0]} from {sched_df_sec['Observation Start'].iloc[0]} to {sched_df_sec['Observation Stop'].iloc[0]}")
 
-        sort_windows = np.sort([pd.Timestamp(start), pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), pd.Timestamp(stop)])
+        # sort_windows = np.sort([pd.Timestamp(start), pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), pd.Timestamp(stop)])
+        sort_windows = [pd.to_datetime(start), pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), pd.to_datetime(stop)]
 
         aux_df_1, log_info = _schedule_auxiliary_target(
             sort_windows[0],
@@ -795,6 +804,7 @@ def _schedule_secondary_exoplanet_and_auxiliary_target(
             state,
             inputs,
         )
+        
         aux_df = pd.concat([aux_df_1, sched_df_sec, aux_df_2], axis=0)
 
     else:

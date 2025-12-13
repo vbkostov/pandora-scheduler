@@ -694,6 +694,8 @@ def read_priority_csv(file_path):
 
 
 def schedule_secondary_exoplanets(tracker, start, stop, obs_windows, transit_coverage_min):
+    start = pd.to_datetime(start)
+    stop = pd.to_datetime(stop)
     secondary_targets = tracker#[tracker['Primary Target'] == 0].reset_index(drop=True)
     for i, row in secondary_targets.iterrows():
     
@@ -729,18 +731,25 @@ def schedule_secondary_exoplanets(tracker, start, stop, obs_windows, transit_cov
         t0 = start_transits + 0.5*transit_dur_hrs
         # obs_window = timedelta(hours = 6)
 
+        # start_timestamp = pd.Timestamp(start)
+        # stop_timestamp = pd.Timestamp(stop)
+        # p_trans = planet_data.index[
+        #     (start_timestamp <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= stop_timestamp)
+        # ]
+
         p_trans = planet_data.index[
-            (pd.to_datetime(start) <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= pd.to_datetime(stop))
+            (start <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= stop)
         ]
 
         if len(p_trans) > 0:
+            # logging.info(f"p_trans: {p_trans}")
 
             sched = pd.DataFrame({
                 "Target": [planet_name],
                 "RA": [secondary_targets['RA'].iloc[i]],
                 "DEC": [secondary_targets['DEC'].iloc[i]],
-                "Observation Start": [(t0[p_trans] - 0.5*obs_window).iloc[0].strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Start_UTC'].iloc[0]],
-                "Observation Stop": [(t0[p_trans] + 0.5*obs_window).iloc[0].strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Stop_UTC'].iloc[0]],
+                "Observation Start": [pd.Timestamp((t0[p_trans] - 0.5*obs_window).iloc[0])],#.strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Start_UTC'].iloc[0]],
+                "Observation Stop": [pd.Timestamp((t0[p_trans] + 0.5*obs_window).iloc[0])],#.strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Stop_UTC'].iloc[0]],
                 "Transit Coverage": [planet_data.iloc[p_trans]['Transit_Coverage'].iloc[0]],
                 "SAA Overlap": [planet_data.iloc[p_trans]['SAA_Overlap'].iloc[0]],
                 "Schedule Factor": [np.nan],
