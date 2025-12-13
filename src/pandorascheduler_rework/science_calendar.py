@@ -56,8 +56,6 @@ def generate_science_calendar(
 ) -> Path:
     """Generate the science calendar XML, matching the legacy behaviour."""
 
-    """Generate the science calendar XML, matching the legacy behaviour."""
-
     builder = _ScienceCalendarBuilder(inputs, config)
     calendar_element = builder.build_calendar()
     xml_string = _serialise_calendar(calendar_element)
@@ -533,41 +531,6 @@ class _ScienceCalendarBuilder:
             )
             if flag and result_df is not None:
                 return result_df, True
-
-        # Fallback: if no candidate schedule was produced but we do have an
-        # occultation catalog, produce a best-effort schedule using the first
-        # available occultation target. This makes the calendar generator more
-        # resilient in cases where visibility matching fails but a reasonable
-        # occultation candidate exists (useful for tests and degraded inputs).
-        try:
-            if not self.occ_catalog.empty and "Star Name" in self.occ_catalog.columns:
-                # Filter out excluded targets from fallback too
-                available = self.occ_catalog[
-                    ~self.occ_catalog["Star Name"].isin(excluded_targets)
-                ]
-                if available.empty:
-                    LOGGER.warning("All occultation targets have exceeded time limit")
-                    return None
-                first_row = available.iloc[0]
-                target_name = first_row.get("Star Name")
-                ra = first_row.get("RA") if "RA" in first_row.index else float("nan")
-                dec = first_row.get("DEC") if "DEC" in first_row.index else float("nan")
-                rows = []
-                for s, e in zip(expanded_starts, expanded_stops):
-                    rows.append(
-                        {
-                            "Target": target_name,
-                            "start": s.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            "stop": e.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            "RA": ra,
-                            "DEC": dec,
-                        }
-                    )
-                return (pd.DataFrame(rows), True)
-        except Exception:
-            # If anything goes wrong with the fallback, fall through to None.
-            pass
-
         return None
 
 

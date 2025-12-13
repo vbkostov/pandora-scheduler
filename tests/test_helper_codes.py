@@ -157,16 +157,24 @@ def test_schedule_occultation_targets_selects_visible_target(tmp_path: Path):
 
 def test_save_observation_time_report_writes_csv(tmp_path: Path):
     output = tmp_path / "report.csv"
+    requested = tmp_path / "requested.csv"
+    pd.DataFrame(
+        {
+            "Star Name": ["Aux"],
+            "Number of Hours Requested": [1.0],
+        }
+    ).to_csv(requested, index=False)
     observation_utils.save_observation_time_report(
         {"WASP-107 b": timedelta(hours=2), "Aux": timedelta(hours=1)},
         pd.DataFrame({"Planet Name": ["WASP-107 b"]}),
         output,
+        requested_hours_catalogs=[requested],
     )
 
     content = output.read_text().splitlines()
-    assert content[0] == "Target,Is Primary,Total Observation Time (hours)"
-    assert "WASP-107 b,Yes,2.00" in content[1:]
-    assert "Aux,No,1.00" in content[1:]
+    assert content[0] == "Target,Is Primary,Hours Requested,Hours Scheduled,Hours Delta"
+    assert "WASP-107 b,Yes,,2.00," in content[1:]
+    assert "Aux,No,1.00,1.00,0.00" in content[1:]
 
 
 def test_schedule_occultation_targets_handles_zero_duration_window(tmp_path: Path):

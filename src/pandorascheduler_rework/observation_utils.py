@@ -520,6 +520,7 @@ def save_observation_time_report(
     all_target_obs_time: Dict[str, timedelta],
     target_list: pd.DataFrame,
     output_path,
+    requested_hours_catalogs: Sequence[Path] | None = None,
 ):
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -529,13 +530,75 @@ def save_observation_time_report(
         for name in target_list.get("Planet Name", pd.Series(dtype=object)).dropna()
     }
 
+    requested_hours_by_target: dict[str, float] = {}
+    if requested_hours_catalogs:
+        for catalog_path in requested_hours_catalogs:
+            path = Path(catalog_path)
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"Requested-hours catalog missing: {path}"
+                )
+            df = pd.read_csv(path)
+            if df.empty:
+                continue
+            if "Star Name" not in df.columns:
+                raise ValueError(
+                    f"Requested-hours catalog is missing 'Star Name' column: {path}"
+                )
+            if "Number of Hours Requested" not in df.columns:
+                raise ValueError(
+                    "Requested-hours catalog is missing 'Number of Hours Requested' "
+                    f"column: {path}"
+                )
+
+            for _, row in df.iterrows():
+                name = row.get("Star Name")
+                if pd.isna(name):
+                    continue
+                key = str(name)
+                hours_req = row.get("Number of Hours Requested")
+                if pd.isna(hours_req):
+                    continue
+                try:
+                    value = float(hours_req)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Invalid 'Number of Hours Requested' for {key!r} in {path}: {hours_req!r}"
+                    ) from exc
+
+                if key in requested_hours_by_target and requested_hours_by_target[key] != value:
+                    raise ValueError(
+                        "Conflicting 'Number of Hours Requested' values for "
+                        f"{key!r}: {requested_hours_by_target[key]} vs {value}"
+                    )
+                requested_hours_by_target[key] = value
+
     with output_file.open("w", encoding="utf-8") as handle:
-        handle.write("Target,Is Primary,Total Observation Time (hours)\n")
+        handle.write(
+            "Target,Is Primary,Hours Requested,Hours Scheduled,Hours Delta\n"
+        )
         for target, duration in all_target_obs_time.items():
             label = str(target)
             is_primary = "Yes" if label in primary_targets else "No"
             hours = duration.total_seconds() / 3600
-            handle.write(f"{label},{is_primary},{hours:.2f}\n")
+
+            if is_primary == "Yes":
+                handle.write(f"{label},{is_primary},,{hours:.2f},\n")
+                continue
+
+            if not requested_hours_catalogs:
+                raise ValueError(
+                    "Cannot report requested-vs-scheduled hours: "
+                    "requested_hours_catalogs not provided"
+                )
+
+            if label not in requested_hours_by_target:
+                raise ValueError(
+                    f"Missing 'Number of Hours Requested' for non-primary target {label!r}"
+                )
+            requested = requested_hours_by_target[label]
+            delta = hours - requested
+            handle.write(f"{label},{is_primary},{requested:.2f},{hours:.2f},{delta:.2f}\n")
 
     return output_file
 

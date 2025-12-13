@@ -486,6 +486,10 @@ def _write_observation_report(
         state.all_target_obs_time,
         inputs.target_list,
         str(report_path),
+        requested_hours_catalogs=[
+            inputs.auxiliary_target_csv,
+            inputs.occultation_target_csv,
+        ],
     )
     return report_path
 
@@ -1071,13 +1075,46 @@ def _schedule_primary_target(
     start: datetime,
     obs_range: pd.DatetimeIndex,
 ) -> pd.DataFrame:
+    if "Transit Coverage" not in temp_df.columns:
+        raise ValueError("Primary candidate table is missing 'Transit Coverage'")
+
+    # Treat (near) 100% transit coverage as a first-class priority signal.
+    # We intentionally make this dominate over quality in the non-critical case.
+    full_coverage = temp_df["Transit Coverage"].astype(float) >= 0.999999
+
     if (temp_df["Transit Factor"] <= 2).any():
-        ranked = temp_df.sort_values(by=["Transit Factor"]).reset_index(drop=True)
+        # Critical case: urgency still wins, but prefer full coverage when urgency ties.
+        ranked = (
+            temp_df.assign(_full_coverage=full_coverage)
+            .sort_values(
+                by=[
+                    "Transit Factor",
+                    "_full_coverage",
+                    "Transit Coverage",
+                    "Quality Factor",
+                ],
+                ascending=[True, False, False, False],
+            )
+            .reset_index(drop=True)
+        )
     else:
-        ranked = temp_df.sort_values(
-            by=["Quality Factor", "Transit Factor"],
-            ascending=[False, True],
-        ).reset_index(drop=True)
+        # Non-critical case: always take full-coverage transits over partial ones.
+        ranked = (
+            temp_df.assign(_full_coverage=full_coverage)
+            .sort_values(
+                by=[
+                    "_full_coverage",
+                    "Quality Factor",
+                    "Transit Coverage",
+                    "Transit Factor",
+                ],
+                ascending=[False, False, False, True],
+            )
+            .reset_index(drop=True)
+        )
+
+    if "_full_coverage" in ranked.columns:
+        ranked = ranked.drop(columns=["_full_coverage"])
 
     first_row = ranked.iloc[0]
     planet_name = str(first_row["Planet Name"])
