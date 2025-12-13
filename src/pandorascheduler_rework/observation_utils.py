@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Sequence, cast
 
 import numpy as np
 import pandas as pd
+from pandas.errors import EmptyDataError
 from astropy.time import Time
 from tqdm import tqdm
 
@@ -531,6 +532,7 @@ def save_observation_time_report(
     }
 
     requested_hours_by_target: dict[str, float] = {}
+    requested_hours_sources_by_target: dict[str, set[str]] = {}
     if requested_hours_catalogs:
         for catalog_path in requested_hours_catalogs:
             path = Path(catalog_path)
@@ -538,7 +540,11 @@ def save_observation_time_report(
                 raise FileNotFoundError(
                     f"Requested-hours catalog missing: {path}"
                 )
-            df = pd.read_csv(path)
+            try:
+                df = pd.read_csv(path)
+            except EmptyDataError:
+                # Treat a truly empty file as an empty catalog.
+                continue
             if df.empty:
                 continue
             if "Star Name" not in df.columns:
@@ -556,6 +562,9 @@ def save_observation_time_report(
                 if pd.isna(name):
                     continue
                 key = str(name)
+
+                requested_hours_sources_by_target.setdefault(key, set()).add(path.name)
+
                 hours_req = row.get("Number of Hours Requested")
                 if pd.isna(hours_req):
                     continue
@@ -567,11 +576,29 @@ def save_observation_time_report(
                     ) from exc
 
                 if key in requested_hours_by_target and requested_hours_by_target[key] != value:
-                    raise ValueError(
-                        "Conflicting 'Number of Hours Requested' values for "
-                        f"{key!r}: {requested_hours_by_target[key]} vs {value}"
+                    chosen = max(requested_hours_by_target[key], value)
+                    LOGGER.warning(
+                        "Conflicting 'Number of Hours Requested' values for %r: %.2f vs %.2f; "
+                        "using %.2f",
+                        key,
+                        requested_hours_by_target[key],
+                        value,
+                        chosen,
                     )
-                requested_hours_by_target[key] = value
+                    requested_hours_by_target[key] = chosen
+                else:
+                    requested_hours_by_target[key] = value
+
+        # Overlap is usually a data issue (e.g., a target appears in both auxiliary and occultation lists).
+        # Warn so users can fix upstream catalogs, but do not fail the pipeline.
+        for target_name, source_names in requested_hours_sources_by_target.items():
+            if len(source_names) > 1:
+                sources_str = ", ".join(sorted(source_names))
+                LOGGER.warning(
+                    "Target %r appears in multiple requested-hours catalogs: %s",
+                    target_name,
+                    sources_str,
+                )
 
     with output_file.open("w", encoding="utf-8") as handle:
         handle.write(

@@ -482,14 +482,18 @@ def _write_observation_report(
 ) -> Path:
     report_name = f"Observation_Time_Report_{pandora_start}.csv"
     report_path = inputs.output_dir / report_name
+    requested_hours_catalogs: list[Path] = []
+    # Prefer the canonical per-category manifests written to the output data dir.
+    for target_def in inputs.target_definition_files[1:]:
+        manifest_path = inputs.paths.data_dir / f"{target_def}_targets.csv"
+        if manifest_path.exists():
+            requested_hours_catalogs.append(manifest_path)
+
     observation_utils.save_observation_time_report(
         state.all_target_obs_time,
         inputs.target_list,
         str(report_path),
-        requested_hours_catalogs=[
-            inputs.auxiliary_target_csv,
-            inputs.occultation_target_csv,
-        ],
+        requested_hours_catalogs=requested_hours_catalogs,
     )
     return report_path
 
