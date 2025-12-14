@@ -87,6 +87,7 @@ src/pandorascheduler/data/ToO_list.csv
 *.pkl
 *.png
 *.zip
+*.prof
 
 # Specific generated files
 src/pandorascheduler/data/Deprioritized_Targets_*.json
