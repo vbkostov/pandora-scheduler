@@ -244,8 +244,7 @@ def _apply_priority(
         # Add Number of Hours Requested from priority table (required for standard categories)
         if "hours_req" not in match.columns:
             raise TargetDefinitionError(
-                f"Priority table for category '{category}' is missing required "
-                f"'hours_req' column"
+                f"Priority table for category '{category}' is missing required 'hours_req' column"
             )
         hours_req_value = match["hours_req"].iloc[0]
         if pd.isna(hours_req_value):
