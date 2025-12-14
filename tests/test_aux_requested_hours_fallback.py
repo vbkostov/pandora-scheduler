@@ -7,6 +7,7 @@ from astropy.time import Time
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import SchedulerInputs, SchedulerPaths, run_scheduler
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.utils.io import build_star_visibility_path
 
 
 def test_aux_falls_back_to_over_requested_with_warning(tmp_path, caplog):
@@ -65,7 +66,7 @@ def test_aux_falls_back_to_over_requested_with_warning(tmp_path, caplog):
     (data_dir / "auxiliary-standard_targets.csv").write_text(aux_df.to_csv(index=False))
 
     # Make the target fully visible for the whole window
-    vis_path = observation_utils.build_star_visibility_path(aux_targets_dir, "AuxStar")
+    vis_path = build_star_visibility_path(aux_targets_dir, "AuxStar")
     vis_path.parent.mkdir(parents=True, exist_ok=True)
     start_mjd = Time(window_start).mjd
     two_hours_days = 2.0 / 24.0

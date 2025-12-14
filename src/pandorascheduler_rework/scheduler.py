@@ -15,7 +15,12 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.utils.io import read_csv_cached, read_parquet_cached
+from pandorascheduler_rework.utils.io import (
+    build_star_visibility_path,
+    build_visibility_path,
+    read_csv_cached,
+    read_parquet_cached,
+)
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 logger = logging.getLogger(__name__)
@@ -58,7 +63,17 @@ def _filter_visibility_by_time(
     else:
         # Modern: Datetime-based filtering (more precise at boundaries)
         if "Time_UTC" in vis.columns:
-            vis_times = pd.to_datetime(vis["Time_UTC"])
+            parsed_col = "_Time_UTC_dt64"
+            time_utc = vis["Time_UTC"]
+            if pd.api.types.is_datetime64_any_dtype(time_utc):
+                vis_times = time_utc
+            else:
+                if parsed_col in vis.columns and pd.api.types.is_datetime64_any_dtype(vis[parsed_col]):
+                    vis_times = vis[parsed_col]
+                else:
+                    # Parse once; store on the cached DataFrame to reuse in subsequent calls.
+                    vis[parsed_col] = pd.to_datetime(time_utc, errors="coerce")
+                    vis_times = vis[parsed_col]
         else:
             # Fallback to MJD conversion
             vis_times = Time(
@@ -384,12 +399,15 @@ def _initialize_tracker(
         planet_name = str(row["Planet Name"])
         star_name = str(row["Star Name"])
 
-        visibility_path = observation_utils.build_visibility_path(
+        visibility_path = build_visibility_path(
             inputs.paths.targets_dir, star_name, planet_name
         )
         planet_data = None
         try:
-            planet_data = read_parquet_cached(str(visibility_path))
+            planet_data = read_parquet_cached(
+                str(visibility_path),
+                columns=["Transit_Start", "Transit_Stop", "Transit_Coverage"],
+            )
         except Exception:
             planet_data = None
 
@@ -572,7 +590,7 @@ def _load_planet_transit_windows(
             )
         star_name = str(star_name)
         
-        vis_path = observation_utils.build_visibility_path(
+        vis_path = build_visibility_path(
             inputs.paths.targets_dir, star_name, planet_str
         )
         if not vis_path.is_file():
@@ -582,7 +600,10 @@ def _load_planet_transit_windows(
                 f"  Expected at: {vis_path}"
             )
         
-        planet_visibility = read_parquet_cached(str(vis_path))
+        planet_visibility = read_parquet_cached(
+            str(vis_path),
+            columns=["Transit_Start", "Transit_Stop"],
+        )
         
         if planet_visibility is None:
             raise ValueError(
@@ -826,7 +847,7 @@ def _schedule_auxiliary_target(
         std_candidate: Optional[tuple[str, float, float, float]] = None
         for std_row in std_records:
             std_name = str(std_row["Star Name"])
-            vis_file = observation_utils.build_star_visibility_path(
+            vis_file = build_star_visibility_path(
                 inputs.paths.aux_targets_dir, std_name
             )
             if not vis_file.is_file():
@@ -836,7 +857,15 @@ def _schedule_auxiliary_target(
                     f"  Expected at: {vis_file}"
                 )
             
-            vis = read_parquet_cached(str(vis_file))
+            vis = read_parquet_cached(
+                str(vis_file),
+                columns=["Time(MJD_UTC)", "Time_UTC", "Visible"],
+            )
+            if vis is None:
+                vis = read_parquet_cached(
+                    str(vis_file),
+                    columns=["Time(MJD_UTC)", "Visible"],
+                )
 
             if vis is None or vis.empty or len(vis) == 0:
                 raise ValueError(
@@ -889,6 +918,33 @@ def _schedule_auxiliary_target(
         )
         stats.total_time += obs_std_duration
         stats.last_priority = priority_std
+
+    # Check if remaining window after STD is too short for auxiliary observation
+    remaining_minutes = (stop - active_start).total_seconds() / 60.0
+    if remaining_minutes <= config.min_sequence_minutes:
+        logger.info(
+            "Remaining window after STD too short (%.1f min <= %d min); "
+            "marking as Free Time from %s to %s",
+            remaining_minutes,
+            config.min_sequence_minutes,
+            active_start,
+            stop,
+        )
+        scheduled_rows.append(
+            ["Free Time", active_start, stop, float("nan"), float("nan")]
+        )
+        result = pd.DataFrame(scheduled_rows, columns=row_columns)
+        for record in result.to_dict(orient="records"):
+            target_label = str(record["Target"])
+            if target_label == "Free Time":
+                continue
+            duration = record["Observation Stop"] - record["Observation Start"]
+            if isinstance(duration, pd.Timedelta):
+                duration = duration.to_pytimedelta()
+            state.all_target_obs_time[target_label] = (
+                state.all_target_obs_time.get(target_label, timedelta()) + duration
+            )
+        return result, "Free time after STD, remaining window too short."
 
     if config.aux_sort_key is None:
         scheduled_rows.append(
@@ -1011,7 +1067,7 @@ def _schedule_auxiliary_target(
             vis_percentages: list[float] = []
 
             for idx, name in enumerate(names):
-                vis_file = observation_utils.build_star_visibility_path(
+                vis_file = build_star_visibility_path(
                     inputs.paths.aux_targets_dir, name
                 )
                 if not vis_file.is_file():
@@ -1021,7 +1077,15 @@ def _schedule_auxiliary_target(
                         f"  Expected at: {vis_file}"
                     )
 
-                vis = read_parquet_cached(str(vis_file))
+                vis = read_parquet_cached(
+                    str(vis_file),
+                    columns=["Time(MJD_UTC)", "Time_UTC", "Visible"],
+                )
+                if vis is None:
+                    vis = read_parquet_cached(
+                        str(vis_file),
+                        columns=["Time(MJD_UTC)", "Visible"],
+                    )
 
                 if vis is None or vis.empty or len(vis) == 0:
                     raise ValueError(
@@ -1211,16 +1275,37 @@ def _schedule_primary_target(
     dfs: list[pd.DataFrame] = []
 
     if obs_range[0].to_pydatetime() < obs_start:
-        aux_df, aux_log = _schedule_auxiliary_target(
-            start,
-            obs_start,
-            config,
-            state,
-            inputs,
-        )
-        if not aux_df.empty:
-            dfs.append(aux_df)
-        logger.info(f"{aux_log}; window {start} to {obs_start}")
+        gap = obs_start - start
+        gap_minutes = gap.total_seconds() / 60.0
+        # Use strict > to avoid fencepost problem: a 5-minute window only yields
+        # 4-5 visibility samples at minute cadence, which may be filtered out by
+        # remove_short_sequences when min_sequence_minutes=5
+        if gap_minutes > config.min_sequence_minutes:
+            aux_df, aux_log = _schedule_auxiliary_target(
+                start,
+                obs_start,
+                config,
+                state,
+                inputs,
+            )
+            if not aux_df.empty:
+                dfs.append(aux_df)
+            logger.info(f"{aux_log}; window {start} to {obs_start}")
+        else:
+            # Gap is too short for a real observation - schedule Free Time instead
+            logger.info(
+                "Gap before primary observation too short (%.1f min <= %d min); "
+                "marking as Free Time from %s to %s",
+                gap_minutes,
+                config.min_sequence_minutes,
+                start,
+                obs_start,
+            )
+            free_time_df = pd.DataFrame(
+                [["Free Time", start, obs_start, float("nan"), float("nan")]],
+                columns=["Target", "Observation Start", "Observation Stop", "RA", "DEC"],
+            )
+            dfs.append(free_time_df)
 
     main_schedule = pd.DataFrame(
         [

@@ -14,7 +14,6 @@ scheduling pipeline.
 
 from __future__ import annotations
 
-import functools
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,9 +27,10 @@ from tqdm import tqdm
 
 from pandorascheduler_rework.targets.manifest import build_target_manifest
 from pandorascheduler_rework.utils.io import (
-    build_star_visibility_path,
-    build_visibility_path,
+    load_visibility_arrays_cached,
     read_parquet_cached,
+    require_planet_visibility_file,
+    resolve_star_visibility_file,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -279,12 +279,15 @@ def schedule_occultation_targets(
         if name in visibility_cache:
             return visibility_cache[name]
 
-        f_path = _resolve_visibility_file(name, base_path)
+        f_path = resolve_star_visibility_file(base_path, name)
         if f_path is None:
             LOGGER.debug("Skipping %s; visibility file not found", name)
             return None
 
-        data = _load_visibility_data(f_path)
+        data = load_visibility_arrays_cached(f_path)
+        if data is None:
+            LOGGER.debug("Skipping %s; visibility file unreadable", name)
+            return None
         visibility_cache[name] = data
         return data
 
@@ -692,12 +695,17 @@ def check_if_transits_in_obs_window(
         star_name = str(planet_lookup.loc[planet_name, "Star Name"])
         
         try:
-            visibility_file = _planet_visibility_file(targets_dir, star_name, str(planet_name))
+            visibility_file = require_planet_visibility_file(
+                targets_dir, star_name, str(planet_name)
+            )
         except FileNotFoundError as e:
             LOGGER.error(str(e))
             raise
 
-        planet_data = read_parquet_cached(str(visibility_file))
+        planet_data = read_parquet_cached(
+            str(visibility_file),
+            columns=["Transit_Start", "Transit_Stop", "Transit_Coverage", "SAA_Overlap"],
+        )
         if planet_data is None:
             raise ValueError(
                 f"Planet visibility file exists but is unreadable: {visibility_file}"
@@ -907,64 +915,6 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
     return output_path
 
 
-# Regex pattern moved to utils.string_ops
 
 
-# Path building functions moved to utils.io (imported above)
 
-
-# remove_suffix moved to utils.string_ops (imported above)
-
-
-@functools.lru_cache(maxsize=32)
-def _load_visibility_data(file_path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Load and cache visibility data from parquet or CSV file.
-
-    This function is cached to avoid repeatedly reading the same file
-    when scheduling multiple observation windows for the same target.
-    Cache size is limited to 32 files (~256 MB memory) to balance
-    performance with memory usage.
-
-    Parameters
-    ----------
-    file_path
-        Path to the visibility file (parquet or CSV).
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        Time array (MJD_UTC) and visibility flags.
-    """
-    if file_path.suffix == ".csv":
-        vis = pd.read_csv(file_path, usecols=["Time(MJD_UTC)", "Visible"])
-    else:
-        vis = pd.read_parquet(file_path, columns=["Time(MJD_UTC)", "Visible"])
-    return vis["Time(MJD_UTC)"].to_numpy(), vis["Visible"].to_numpy()
-
-
-def _resolve_visibility_file(target_name: str, base_path: Path | None) -> Path | None:
-    """Find visibility file for a target in the given base path.
-    
-    The base_path should be the directory containing target subdirectories,
-    e.g., 'data/aux_targets' or 'data/targets'.
-    """
-    if base_path is None:
-        return None
-
-    candidate = build_star_visibility_path(base_path, target_name)
-    if candidate.is_file():
-        return candidate
-
-    return None
-
-
-def _planet_visibility_file(targets_dir: Path, star_name: str, planet_name: str) -> Path:
-    """Find planet visibility file, raising error if not found."""
-    candidate = build_visibility_path(targets_dir, star_name, planet_name)
-    if not candidate.is_file():
-        raise FileNotFoundError(
-            f"Planet visibility file not found: {candidate}\n"
-            f"  Star: {star_name}, Planet: {planet_name}\n"
-            f"  Expected path: {candidate}"
-        )
-    return candidate

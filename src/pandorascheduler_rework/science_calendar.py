@@ -269,12 +269,34 @@ class _ScienceCalendarBuilder:
                     visit_times = [transit_start[0], transit_stop[0]]
                     visibility_flags = [1, 1]
                 except Exception:
+                    source, time_min, time_max, in_window = _visibility_diagnostics(
+                        visibility_df, start, stop
+                    )
                     LOGGER.warning(
-                        "No visibility samples within visit for %s", target_name
+                        "No visibility samples within visit for %s (visit=%s..%s, vis_file=%s, vis_range=%s..%s, samples_in_window=%s)",
+                        target_name,
+                        start,
+                        stop,
+                        source,
+                        time_min,
+                        time_max,
+                        in_window,
                     )
                     return
             else:
-                LOGGER.warning("No visibility samples within visit for %s", target_name)
+                source, time_min, time_max, in_window = _visibility_diagnostics(
+                    visibility_df, start, stop
+                )
+                LOGGER.warning(
+                    "No visibility samples within visit for %s (visit=%s..%s, vis_file=%s, vis_range=%s..%s, samples_in_window=%s)",
+                    target_name,
+                    start,
+                    stop,
+                    source,
+                    time_min,
+                    time_max,
+                    in_window,
+                )
                 return
 
         visibility_changes = _visibility_change_indices(visibility_flags)
@@ -641,19 +663,77 @@ def _lookup_occultation_info(
 def _read_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
     """Read star visibility file with caching."""
     path = directory / f"Visibility for {name}.parquet"
-    df = read_parquet_cached(str(path))
+    df = read_parquet_cached(
+        str(path),
+        columns=["Time(MJD_UTC)", "Time_UTC", "Visible"],
+    )
+    if df is None:
+        # Older visibility parquet fixtures (and some historical outputs) may not
+        # include Time_UTC. Fall back to MJD-only visibility timeline.
+        df = read_parquet_cached(
+            str(path),
+            columns=["Time(MJD_UTC)", "Visible"],
+        )
     if df is None:
         LOGGER.debug("Visibility file missing for %s", name)
         return None
+    # Keep the source path for later diagnostics/logging.
+    df.attrs["_source_path"] = str(path)
     if df.empty:
         LOGGER.debug("DF is empty for %s", name)
     return df
 
 
+def _visibility_diagnostics(
+    visibility_df: pd.DataFrame,
+    start: datetime,
+    stop: datetime,
+) -> tuple[str, str, str, str]:
+    """Return (source_path, time_min, time_max, samples_in_window) for warnings."""
+    source = str(visibility_df.attrs.get("_source_path", "<unknown>"))
+    if "Time_UTC" in visibility_df.columns and pd.api.types.is_datetime64_any_dtype(
+        visibility_df["Time_UTC"]
+    ):
+        times = visibility_df["Time_UTC"].to_numpy(dtype="datetime64[ns]")
+        if times.size == 0:
+            return source, "<empty>", "<empty>", "0"
+        time_min = pd.to_datetime(times.min()).to_pydatetime().isoformat(sep=" ")
+        time_max = pd.to_datetime(times.max()).to_pydatetime().isoformat(sep=" ")
+        mask = (times >= np.datetime64(start)) & (times <= np.datetime64(stop))
+        in_window = int(mask.sum())
+        return source, time_min, time_max, str(in_window)
+
+    if "Time(MJD_UTC)" in visibility_df.columns:
+        mjd = visibility_df["Time(MJD_UTC)"].to_numpy(dtype=float)
+        if mjd.size == 0:
+            return source, "<empty>", "<empty>", "0"
+        mjd_min = float(np.nanmin(mjd))
+        mjd_max = float(np.nanmax(mjd))
+        time_min = Time(mjd_min, format="mjd", scale="utc").to_datetime().isoformat(
+            sep=" "
+        )
+        time_max = Time(mjd_max, format="mjd", scale="utc").to_datetime().isoformat(
+            sep=" "
+        )
+        start_mjd = Time(start).mjd
+        stop_mjd = Time(stop).mjd
+        in_window = int(((mjd >= start_mjd) & (mjd <= stop_mjd)).sum())
+        return source, time_min, time_max, str(in_window)
+
+    return source, "<unknown>", "<unknown>", "<unknown>"
+
+
 def _read_planet_visibility(directory: Path, name: str) -> Optional[pd.DataFrame]:
-    """Read planet visibility file with caching."""
+    """Read planet transit-visibility file with caching.
+
+    Planet visibility parquet files contain transit windows (MJD start/stop), not a
+    per-timestep visibility timeline. Therefore we load the transit window columns.
+    """
     path = directory / f"Visibility for {name}.parquet"
-    df = read_parquet_cached(str(path))
+    df = read_parquet_cached(
+        str(path),
+        columns=["Transit_Start", "Transit_Stop"],
+    )
     if df is None:
         LOGGER.debug("Planet visibility file missing for %s", name)
     return df
@@ -665,31 +745,54 @@ def _extract_visibility_segment(
     stop: datetime,
     min_sequence_minutes: int,
 ) -> tuple[List[datetime], List[int]]:
-    raw_times = Time(
-        visibility_df["Time(MJD_UTC)"].to_numpy(),
-        format="mjd",
-        scale="utc",
-    ).to_datetime()
-    # Normalise astropy datetimes to naive Python datetimes (UTC) so comparisons
-    # with schedule start/stop (which are naive datetimes) behave predictably.
-    raw_times = [
-        (rt.replace(tzinfo=None) if getattr(rt, "tzinfo", None) is not None else rt)
-        for rt in raw_times
-    ]
+    if "Time_UTC" in visibility_df.columns and pd.api.types.is_datetime64_any_dtype(
+        visibility_df["Time_UTC"]
+    ):
+        times_dt64 = visibility_df["Time_UTC"].to_numpy(dtype="datetime64[ns]")
+        start_dt64 = np.datetime64(start)
+        stop_dt64 = np.datetime64(stop)
+        mask = (times_dt64 >= start_dt64) & (times_dt64 <= stop_dt64)
+        if not bool(mask.any()):
+            return [], []
 
-    mask = [start <= value <= stop for value in raw_times]
-    if not any(mask):
-        return [], []
+        window_indices = np.flatnonzero(mask)
 
-    window_indices = [idx for idx, include in enumerate(mask) if include]
-    filtered_times = [raw_times[idx] for idx in window_indices]
-    # Round each time to nearest second
-    visit_times = [
-        (t + timedelta(microseconds=500_000)).replace(microsecond=0)
-        for t in filtered_times
-    ]
+        # Round to nearest second with legacy half-up semantics.
+        # (pandas .round('S') uses bankers rounding; we need >=0.5s to round up.)
+        ns = times_dt64[window_indices].astype("datetime64[ns]").view("int64")
+        rounded_ns = ((ns + 500_000_000) // 1_000_000_000) * 1_000_000_000
+        rounded_dt64 = rounded_ns.view("datetime64[ns]")
+        visit_times = pd.to_datetime(rounded_dt64).to_pydatetime().tolist()
+    else:
+        raw_times = Time(
+            visibility_df["Time(MJD_UTC)"].to_numpy(),
+            format="mjd",
+            scale="utc",
+        ).to_datetime()
+        # Normalise astropy datetimes to naive Python datetimes (UTC) so comparisons
+        # with schedule start/stop (which are naive datetimes) behave predictably.
+        raw_times = [
+            (
+                rt.replace(tzinfo=None)
+                if getattr(rt, "tzinfo", None) is not None
+                else rt
+            )
+            for rt in raw_times
+        ]
 
-    flags = [float(visibility_df.iloc[idx]["Visible"]) for idx in window_indices]
+        mask = [start <= value <= stop for value in raw_times]
+        if not any(mask):
+            return [], []
+
+        window_indices = [idx for idx, include in enumerate(mask) if include]
+        filtered_times = [raw_times[idx] for idx in window_indices]
+        # Round each time to nearest second
+        visit_times = [
+            (t + timedelta(microseconds=500_000)).replace(microsecond=0)
+            for t in filtered_times
+        ]
+
+    flags = [float(visibility_df.iloc[int(idx)]["Visible"]) for idx in window_indices]
     filtered_flags, _ = remove_short_sequences(
         np.asarray(flags, dtype=float),
         min_sequence_minutes,

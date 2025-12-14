@@ -77,7 +77,14 @@ def build_visibility_catalog(
             if "exoplanet" not in target_path.name.lower():
                 visibility_df["Time(MJD_UTC)"] = np.round(visibility_df["Time(MJD_UTC)"], 6)
 
-            visibility_df.to_parquet(output_path, index=False)
+            visibility_df.to_parquet(
+                output_path,
+                index=False,
+                engine="pyarrow",
+                compression="snappy",
+                write_statistics=False,
+                use_dictionary=False,
+            )
     else:
         # Still need star_metadata for planet transits
         star_metadata = _build_star_metadata(target_manifest)
@@ -129,17 +136,16 @@ def _build_base_payload(ephemeris, cadence: MinuteCadence) -> dict[str, np.ndarr
         ephemeris.spacecraft_lat_deg, ephemeris.spacecraft_lon_deg
     )
 
-    # Pre-compute datetime conversion once for all stars (major performance optimization)
+    # Pre-compute datetime conversion once for all stars.
+    # Store as datetime64[ns] (timestamp) so parquet writing is faster than
+    # writing variable-length strings, and downstream code avoids re-parsing.
     mjd_array = np.asarray(cadence.mjd_utc, dtype=float)
     time_utc = Time(mjd_array, format="mjd", scale="utc")
-    
-    # Convert to ISO strings directly for faster CSV writing
-    # (pandas doesn't need to format strings, unlike datetime objects)
-    datetime_iso_strings = time_utc.iso
+    datetime_utc = time_utc.datetime64
 
     return {
         "Time(MJD_UTC)": mjd_array,
-        "Time_UTC": datetime_iso_strings,  # Pre-formatted ISO strings
+        "Time_UTC": datetime_utc,
         "SAA_Crossing": np.round(saa_crossing, 1),
         "earth_pc": SkyCoord(
             ephemeris.earth_pc,
@@ -292,7 +298,14 @@ def _build_planet_transits(
             star_metadata,
             observer_location,
         )
-        planet_df.to_parquet(planet_output, index=False)
+        planet_df.to_parquet(
+            planet_output,
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+            write_statistics=False,
+            use_dictionary=False,
+        )
         if not planet_df.empty:
             generated.append((star_name, planet_name))
 
@@ -305,7 +318,10 @@ def _compute_planet_transits(
     star_metadata: dict[str, tuple[float, float]],
     observer_location: EarthLocation,
 ) -> pd.DataFrame:
-    star_visibility = read_parquet_cached(str(star_visibility_path))
+    star_visibility = read_parquet_cached(
+        str(star_visibility_path),
+        columns=["Time(MJD_UTC)", "Visible", "SAA_Crossing"],
+    )
     if star_visibility is None or star_visibility.empty:
         raise FileNotFoundError(
             f"Star visibility missing or empty for {star_visibility_path}"
@@ -515,7 +531,10 @@ def _apply_transit_overlaps(
                 raise FileNotFoundError(
                     f"Expected planet visibility missing: {planet_path}"
                 )
-            df = read_parquet_cached(str(planet_path))
+            df = read_parquet_cached(
+                str(planet_path),
+                columns=["Transit_Start", "Transit_Stop", "Transit_Coverage", "SAA_Overlap"],
+            )
             if df is None:
                 raise FileNotFoundError(
                     f"Unable to read planet visibility: {planet_path}"
@@ -582,4 +601,11 @@ def _apply_transit_overlaps(
             planet_path = (
                 output_root / star_name / planet / f"Visibility for {planet}.parquet"
             )
-            df.to_parquet(planet_path, index=False)
+            df.to_parquet(
+                planet_path,
+                index=False,
+                engine="pyarrow",
+                compression="snappy",
+                write_statistics=False,
+                use_dictionary=False,
+            )
