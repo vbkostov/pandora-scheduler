@@ -1,7 +1,10 @@
 import pandas as pd
 from astropy.time import Time
 
-from pandorascheduler_rework.science_calendar import _read_planet_visibility, _transit_windows
+from pandorascheduler_rework.science_calendar import (
+    _read_planet_visibility,
+    _transit_windows,
+)
 
 
 def test_read_planet_visibility_parquet_uses_transit_columns(tmp_path, caplog):

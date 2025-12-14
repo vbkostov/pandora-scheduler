@@ -5,8 +5,11 @@ import pandas as pd
 from astropy.time import Time
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.scheduler import SchedulerInputs, SchedulerPaths, run_scheduler
-from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.scheduler import (
+    SchedulerInputs,
+    SchedulerPaths,
+    run_scheduler,
+)
 from pandorascheduler_rework.utils.io import build_star_visibility_path
 
 

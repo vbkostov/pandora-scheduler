@@ -1,8 +1,9 @@
 """Unit tests for unified configuration system."""
 
-import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 

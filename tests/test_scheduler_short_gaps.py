@@ -5,18 +5,18 @@ start is shorter than min_sequence_minutes, the scheduler should not attempt to
 schedule an auxiliary target. Instead, it should mark the gap as Free Time.
 """
 
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
+
 import pandas as pd
-import numpy as np
+import pytest
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
-    _schedule_primary_target,
-    SchedulerState,
     SchedulerInputs,
     SchedulerPaths,
+    SchedulerState,
+    _schedule_primary_target,
 )
 
 
@@ -219,12 +219,11 @@ class TestShortWindowAfterSTD:
     def test_short_remaining_window_after_std_becomes_free_time(self, tmp_path):
         """When STD takes most of the window, remaining 1 min should be Free Time."""
         from pandorascheduler_rework.scheduler import (
-            _schedule_auxiliary_target,
-            SchedulerState,
             SchedulerInputs,
-            SchedulerPaths,
+            SchedulerState,
+            _schedule_auxiliary_target,
         )
-        
+
         # Create a config where STD takes most of a 31-minute window
         config = PandoraSchedulerConfig(
             window_start=datetime(2026, 1, 1),

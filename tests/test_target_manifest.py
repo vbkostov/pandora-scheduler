@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import types
+import warnings
 from importlib import util as importlib_util
 from pathlib import Path
-import types
-
-import warnings
 
 import pandas as pd
 import pytest
@@ -12,7 +11,6 @@ from erfa import ErfaWarning
 
 # Import the rework manifest builder (place imports at top to satisfy linters)
 from pandorascheduler_rework.targets.manifest import build_target_manifest
-
 
 warnings.filterwarnings("ignore", category=ErfaWarning)
 
@@ -112,7 +110,10 @@ class TestManifestStrictValidation:
 
     def test_missing_hours_req_column_raises_error(self):
         """Test that missing 'hours_req' column in priority table raises an error."""
-        from pandorascheduler_rework.targets.manifest import TargetDefinitionError, _apply_priority
+        from pandorascheduler_rework.targets.manifest import (
+            TargetDefinitionError,
+            _apply_priority,
+        )
 
         category = "auxiliary-standard"
         
@@ -131,8 +132,12 @@ class TestManifestStrictValidation:
 
     def test_missing_hours_req_value_raises_error(self):
         """Test that missing 'hours_req' value for a target raises an error."""
-        from pandorascheduler_rework.targets.manifest import TargetDefinitionError, _apply_priority
         import numpy as np
+
+        from pandorascheduler_rework.targets.manifest import (
+            TargetDefinitionError,
+            _apply_priority,
+        )
 
         category = "auxiliary-standard"
         

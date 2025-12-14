@@ -12,9 +12,9 @@ from astropy import units as u
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.time import Time
 
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.utils.io import read_csv_cached, read_parquet_cached
 
-from pandorascheduler_rework.config import PandoraSchedulerConfig
 from .geometry import (
     MinuteCadence,
     build_minute_cadence,
@@ -58,7 +58,7 @@ def build_visibility_catalog(
         output_path = output_root / star_name / f"Visibility for {star_name}.parquet"
         if not output_path.exists() or config.force_regenerate:
             stars_to_generate.append((star_name, row))
-    
+
     # Only compute expensive ephemeris/payload if we need to generate files
     if stars_to_generate:
         cadence = build_minute_cadence(config.window_start, config.window_end)
@@ -75,7 +75,9 @@ def build_visibility_catalog(
             visibility_df = _build_star_visibility(base_payload, star_coord, config)
 
             if "exoplanet" not in target_path.name.lower():
-                visibility_df["Time(MJD_UTC)"] = np.round(visibility_df["Time(MJD_UTC)"], 6)
+                visibility_df["Time(MJD_UTC)"] = np.round(
+                    visibility_df["Time(MJD_UTC)"], 6
+                )
 
             visibility_df.to_parquet(
                 output_path,
@@ -440,8 +442,8 @@ def _compute_planet_transits(
     end_datetimes = end_transits.to_value("datetime")
 
     # Floor to minute precision using pandas vectorized operations
-    start_datetimes = pd.to_datetime(start_datetimes).floor('min').to_pydatetime()
-    end_datetimes = pd.to_datetime(end_datetimes).floor('min').to_pydatetime()
+    start_datetimes = pd.to_datetime(start_datetimes).floor("min").to_pydatetime()
+    end_datetimes = pd.to_datetime(end_datetimes).floor("min").to_pydatetime()
 
     saa_mask = star_visibility["SAA_Crossing"].to_numpy(dtype=float)
     T_mjd_utc = Time(t_mjd, format="mjd", scale="utc")
@@ -502,13 +504,15 @@ def _apply_transit_overlaps(
         # Quick check: if all planet files already have Transit_Overlap, skip expensive recomputation
         all_have_overlap = True
         for planet in planets:
-            planet_path = output_root / star_name / planet / f"Visibility for {planet}.parquet"
+            planet_path = (
+                output_root / star_name / planet / f"Visibility for {planet}.parquet"
+            )
             if not planet_path.exists():
                 all_have_overlap = False
                 break
             # Quick check: just read the header line to see if Transit_Overlap exists
             try:
-                with open(planet_path, 'r') as f:
+                with open(planet_path, "r") as f:
                     header = f.readline().strip()
                     if "Transit_Overlap" not in header:
                         all_have_overlap = False
@@ -516,7 +520,7 @@ def _apply_transit_overlaps(
             except Exception:
                 all_have_overlap = False
                 break
-        
+
         if all_have_overlap:
             continue  # Skip this star system - all planets already have overlaps computed
 
@@ -533,7 +537,12 @@ def _apply_transit_overlaps(
                 )
             df = read_parquet_cached(
                 str(planet_path),
-                columns=["Transit_Start", "Transit_Stop", "Transit_Coverage", "SAA_Overlap"],
+                columns=[
+                    "Transit_Start",
+                    "Transit_Stop",
+                    "Transit_Coverage",
+                    "SAA_Overlap",
+                ],
             )
             if df is None:
                 raise FileNotFoundError(
@@ -544,23 +553,26 @@ def _apply_transit_overlaps(
                 continue
             planet_data[planet] = df
             sets: list[tuple[set, int]] = []
-            
+
             # Vectorized datetime processing (much faster than iterrows)
-            if "Transit_Start_UTC" in df.columns and df["Transit_Start_UTC"].notna().any():
+            if (
+                "Transit_Start_UTC" in df.columns
+                and df["Transit_Start_UTC"].notna().any()
+            ):
                 # Use pre-existing datetime columns (fastest path)
-                start_times = pd.to_datetime(df["Transit_Start_UTC"]).dt.floor('min')
-                end_times = pd.to_datetime(df["Transit_Stop_UTC"]).dt.floor('min')
+                start_times = pd.to_datetime(df["Transit_Start_UTC"]).dt.floor("min")
+                end_times = pd.to_datetime(df["Transit_Stop_UTC"]).dt.floor("min")
             else:
                 # Fallback to MJD conversion (vectorized)
                 start_mjd = df["Transit_Start"].to_numpy(dtype=float)
                 end_mjd = df["Transit_Stop"].to_numpy(dtype=float)
                 start_times = pd.Series(
                     Time(start_mjd, format="mjd", scale="utc").to_datetime()
-                ).dt.floor('min')
+                ).dt.floor("min")
                 end_times = pd.Series(
                     Time(end_mjd, format="mjd", scale="utc").to_datetime()
-                ).dt.floor('min')
-            
+                ).dt.floor("min")
+
             # Build minute sets for each transit
             for start_dt, end_dt in zip(start_times, end_times):
                 minutes = list(

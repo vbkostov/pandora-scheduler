@@ -15,13 +15,13 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.utils.io import (
     build_star_visibility_path,
     build_visibility_path,
     read_csv_cached,
     read_parquet_cached,
 )
-from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -34,23 +34,23 @@ def _filter_visibility_by_time(
     use_legacy_mode: bool,
 ) -> pd.DataFrame:
     """Filter visibility data to a time window.
-    
+
     Args:
         vis: Visibility DataFrame with Time(MJD_UTC) and optionally Time_UTC columns
         start: Start of time window
         stop: End of time window
         use_legacy_mode: If True, use MJD-based filtering (matches legacy exactly).
                         If False, use datetime-based filtering (more precise at boundaries).
-    
+
     Returns:
         Filtered visibility DataFrame
-        
+
     Note:
         Legacy mode uses MJD filtering which can exclude boundary points due to
         floating-point precision. For example, if start converts to MJD 61079.6048611111
         but the data has 61079.6048610000, the row is excluded. Datetime filtering
         includes such boundary rows correctly.
-        
+
         The practical difference is typically 0-2 rows at window boundaries, which
         can affect visibility percentage calculations and thus target selection
         when multiple targets have similar visibility.
@@ -68,7 +68,9 @@ def _filter_visibility_by_time(
             if pd.api.types.is_datetime64_any_dtype(time_utc):
                 vis_times = time_utc
             else:
-                if parsed_col in vis.columns and pd.api.types.is_datetime64_any_dtype(vis[parsed_col]):
+                if parsed_col in vis.columns and pd.api.types.is_datetime64_any_dtype(
+                    vis[parsed_col]
+                ):
                     vis_times = vis[parsed_col]
                 else:
                     # Parse once; store on the cached DataFrame to reuse in subsequent calls.
@@ -81,7 +83,7 @@ def _filter_visibility_by_time(
             ).to_datetime()
             vis_times = pd.to_datetime(vis_times)
         mask = (vis_times >= start) & (vis_times <= stop)
-    
+
     return vis.loc[mask]
 
 
@@ -573,12 +575,11 @@ def _load_planet_transit_windows(
 ) -> dict[str, tuple[datetime, datetime]]:
     """Batch-load transit windows for multiple planets to avoid repeated CSV reads."""
     transit_windows = {}
-    
+
     # Build planet -> star name lookup from target list
-    planet_to_star = dict(zip(
-        inputs.target_list["Planet Name"],
-        inputs.target_list["Star Name"]
-    ))
+    planet_to_star = dict(
+        zip(inputs.target_list["Planet Name"], inputs.target_list["Star Name"])
+    )
 
     for planet_name in planet_names:
         planet_str = str(planet_name)
@@ -589,7 +590,7 @@ def _load_planet_transit_windows(
                 f"Cannot determine star name."
             )
         star_name = str(star_name)
-        
+
         vis_path = build_visibility_path(
             inputs.paths.targets_dir, star_name, planet_str
         )
@@ -599,18 +600,18 @@ def _load_planet_transit_windows(
                 f"  Planet: {planet_str}, Star: {star_name}\n"
                 f"  Expected at: {vis_path}"
             )
-        
+
         planet_visibility = read_parquet_cached(
             str(vis_path),
             columns=["Transit_Start", "Transit_Stop"],
         )
-        
+
         if planet_visibility is None:
             raise ValueError(
                 f"Planet visibility file exists but is unreadable: {vis_path}\n"
                 f"  Planet: {planet_str}, Star: {star_name}"
             )
-        
+
         # Skip planets with no transits in the scheduling window (valid case)
         if planet_visibility.empty or len(planet_visibility) == 0:
             continue
@@ -856,7 +857,7 @@ def _schedule_auxiliary_target(
                     f"  Target: {std_name}\n"
                     f"  Expected at: {vis_file}"
                 )
-            
+
             vis = read_parquet_cached(
                 str(vis_file),
                 columns=["Time(MJD_UTC)", "Time_UTC", "Visible"],
@@ -1031,16 +1032,23 @@ def _schedule_auxiliary_target(
 
             aux_targets = aux_targets.assign(_requested_hours=requested_hours)
             aux_targets = aux_targets.assign(
-                _observed_hours=aux_targets["Star Name"].astype(str).map(
+                _observed_hours=aux_targets["Star Name"]
+                .astype(str)
+                .map(
                     lambda label: (
-                        state.non_primary_obs_time.get(str(label)).total_time.total_seconds() / 3600.0
+                        state.non_primary_obs_time.get(
+                            str(label)
+                        ).total_time.total_seconds()
+                        / 3600.0
                         if state.non_primary_obs_time.get(str(label)) is not None
                         else 0.0
                     )
                 )
             )
             if not allow_over_requested:
-                eligible = aux_targets["_observed_hours"] < aux_targets["_requested_hours"]
+                eligible = (
+                    aux_targets["_observed_hours"] < aux_targets["_requested_hours"]
+                )
                 aux_targets = aux_targets.loc[eligible].reset_index(drop=True)
 
             if aux_targets.empty:
@@ -1105,7 +1113,9 @@ def _schedule_auxiliary_target(
                     break
                 if not vis_filtered.empty and vis_filtered["Visible"].any():
                     vis_any.append(idx)
-                    visibility = 100 * (vis_filtered["Visible"].sum() / len(vis_filtered))
+                    visibility = 100 * (
+                        vis_filtered["Visible"].sum() / len(vis_filtered)
+                    )
                     vis_percentages.append(visibility)
 
             chosen_idx: int | None = None
@@ -1136,16 +1146,18 @@ def _schedule_auxiliary_target(
             ra_val = ras[chosen_idx]
             dec_val = decs[chosen_idx]
             priority_val = priorities[chosen_idx]
-            selected_requested_hours = float(aux_targets.loc[chosen_idx, "_requested_hours"])
-            selected_observed_hours = float(aux_targets.loc[chosen_idx, "_observed_hours"])
+            selected_requested_hours = float(
+                aux_targets.loc[chosen_idx, "_requested_hours"]
+            )
+            selected_observed_hours = float(
+                aux_targets.loc[chosen_idx, "_observed_hours"]
+            )
             fallback_over_requested_used = (
                 selected_observed_hours >= selected_requested_hours
             )
 
             if best_visibility is not None and best_visibility >= 100.0:
-                log_info = (
-                    f"{name} scheduled for non-primary observation with full visibility."
-                )
+                log_info = f"{name} scheduled for non-primary observation with full visibility."
             else:
                 log_info = (
                     "No non-primary target with full visibility; "
@@ -1255,7 +1267,7 @@ def _schedule_primary_target(
     ra_value = first_row["RA"]
     dec_value = first_row["DEC"]
     obs_start = pd.Timestamp(first_row["Obs Start"]).to_pydatetime()
-    
+
     # Use per-target visit duration from candidate (already computed in check_if_transits_in_obs_window)
     visit_duration = first_row.get("Visit Duration")
     if visit_duration is None or pd.isna(visit_duration):
@@ -1265,7 +1277,7 @@ def _schedule_primary_target(
         )
     elif isinstance(visit_duration, pd.Timedelta):
         visit_duration = visit_duration.to_pytimedelta()
-    
+
     obs_stop = obs_start + visit_duration
     trans_cover = first_row["Transit Coverage"]
     saa_cover = first_row["SAA Overlap"]
@@ -1303,7 +1315,13 @@ def _schedule_primary_target(
             )
             free_time_df = pd.DataFrame(
                 [["Free Time", start, obs_start, float("nan"), float("nan")]],
-                columns=["Target", "Observation Start", "Observation Stop", "RA", "DEC"],
+                columns=[
+                    "Target",
+                    "Observation Start",
+                    "Observation Stop",
+                    "RA",
+                    "DEC",
+                ],
             )
             dfs.append(free_time_df)
 

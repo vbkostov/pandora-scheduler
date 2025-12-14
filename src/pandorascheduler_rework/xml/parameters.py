@@ -166,8 +166,7 @@ def populate_vda_parameters(
                 )
             if isinstance(fallback, float) and pd.isna(fallback):
                 raise ValueError(
-                    "NaN StarRoiDetMethod for target "
-                    f"{target_identifier(row)}"
+                    "NaN StarRoiDetMethod for target " f"{target_identifier(row)}"
                 )
 
             try:

@@ -8,8 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Sequence
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 LOGGER = logging.getLogger(__name__)
 
@@ -205,10 +205,14 @@ def _load_visibility_arrays_with_mtime(
     return vis["Time(MJD_UTC)"].to_numpy(), vis["Visible"].to_numpy()
 
 
-_load_visibility_arrays_with_mtime = lru_cache(maxsize=256)(_load_visibility_arrays_with_mtime)
+_load_visibility_arrays_with_mtime = lru_cache(maxsize=256)(
+    _load_visibility_arrays_with_mtime
+)
 
 
-def load_visibility_arrays_cached(file_path: Path) -> Optional[tuple[np.ndarray, np.ndarray]]:
+def load_visibility_arrays_cached(
+    file_path: Path,
+) -> Optional[tuple[np.ndarray, np.ndarray]]:
     """Load (time_mjd_utc, visible_flag) arrays with mtime-aware caching."""
     if not file_path.exists():
         return None
@@ -235,7 +239,9 @@ def resolve_star_visibility_file(base_dir: Path | None, star_name: str) -> Path 
     return candidate if candidate.is_file() else None
 
 
-def require_planet_visibility_file(base_dir: Path, star_name: str, planet_name: str) -> Path:
+def require_planet_visibility_file(
+    base_dir: Path, star_name: str, planet_name: str
+) -> Path:
     """Return planet visibility file path, raising if missing."""
     candidate = build_visibility_path(base_dir, star_name, planet_name)
     if not candidate.is_file():

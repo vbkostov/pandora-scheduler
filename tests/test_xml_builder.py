@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
-from astropy.time import Time
-import xml.etree.ElementTree as ET
 import pytest
+from astropy.time import Time
 
 from pandorascheduler_rework import science_calendar
 from pandorascheduler_rework.config import PandoraSchedulerConfig

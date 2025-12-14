@@ -7,15 +7,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from astropy.time import Time
 
 from pandorascheduler_rework import observation_utils
-from pandorascheduler_rework.utils.string_ops import remove_suffix
 from pandorascheduler_rework.utils.array_ops import (
-    remove_short_sequences,
     break_long_sequences,
+    remove_short_sequences,
 )
+from pandorascheduler_rework.utils.string_ops import remove_suffix
 from pandorascheduler_rework.xml import observation_sequence
 
 

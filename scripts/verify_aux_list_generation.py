@@ -1,8 +1,11 @@
 
 import sys
 from pathlib import Path
+
 import pandas as pd
+
 from pandorascheduler_rework.pipeline import _generate_target_manifests
+
 
 def test_aux_list_generation():
     # Setup temporary directory structure

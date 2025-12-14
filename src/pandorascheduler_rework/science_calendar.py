@@ -30,13 +30,13 @@ from astropy.time import Time
 from tqdm import tqdm
 
 from pandorascheduler_rework import observation_utils
+from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.utils.array_ops import (
     break_long_sequences,
     remove_short_sequences,
 )
 from pandorascheduler_rework.utils.io import read_csv_cached, read_parquet_cached
 from pandorascheduler_rework.xml import observation_sequence
-from pandorascheduler_rework.config import PandoraSchedulerConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class _ScienceCalendarBuilder:
 
     def _get_occultation_time_limit(self, target_name: str) -> timedelta:
         """Get the time limit for an occultation target.
-        
+
         Looks up 'Number of Hours Requested' from the occultation manifest.
         Raises ValueError if the catalog is missing, the target is not found,
         or the required column is missing.
@@ -112,9 +112,7 @@ class _ScienceCalendarBuilder:
             )
         match = self.occ_catalog[self.occ_catalog["Star Name"] == target_name]
         if match.empty:
-            raise ValueError(
-                f"Occultation target '{target_name}' not found in catalog"
-            )
+            raise ValueError(f"Occultation target '{target_name}' not found in catalog")
         if "Number of Hours Requested" not in match.columns:
             raise ValueError(
                 "Occultation catalog is missing required 'Number of Hours Requested' "
@@ -403,7 +401,7 @@ class _ScienceCalendarBuilder:
                         break
 
                     occ_target = str(occ_df.iloc[oc_index]["Target"])
-                    
+
                     # Check if this occultation target has exceeded its time limit
                     current_occ_time = self.occultation_obs_time.get(
                         occ_target, timedelta()
@@ -418,7 +416,7 @@ class _ScienceCalendarBuilder:
                         )
                         oc_index += 1
                         continue
-                    
+
                     occ_info = _lookup_occultation_info(
                         occ_target,
                         self.target_catalog,
@@ -443,14 +441,14 @@ class _ScienceCalendarBuilder:
                         dec_occ,
                         occ_info if occ_info is not None else pd.DataFrame(),
                     )
-                    
+
                     # Track the observation time for this occultation target
                     sequence_duration = next_value - current
                     self.occultation_obs_time[occ_target] = (
                         self.occultation_obs_time.get(occ_target, timedelta())
                         + sequence_duration
                     )
-                    
+
                     seq_counter += 1
                     oc_index += 1
                     current = next_value
@@ -709,11 +707,11 @@ def _visibility_diagnostics(
             return source, "<empty>", "<empty>", "0"
         mjd_min = float(np.nanmin(mjd))
         mjd_max = float(np.nanmax(mjd))
-        time_min = Time(mjd_min, format="mjd", scale="utc").to_datetime().isoformat(
-            sep=" "
+        time_min = (
+            Time(mjd_min, format="mjd", scale="utc").to_datetime().isoformat(sep=" ")
         )
-        time_max = Time(mjd_max, format="mjd", scale="utc").to_datetime().isoformat(
-            sep=" "
+        time_max = (
+            Time(mjd_max, format="mjd", scale="utc").to_datetime().isoformat(sep=" ")
         )
         start_mjd = Time(start).mjd
         stop_mjd = Time(stop).mjd
@@ -772,11 +770,7 @@ def _extract_visibility_segment(
         # Normalise astropy datetimes to naive Python datetimes (UTC) so comparisons
         # with schedule start/stop (which are naive datetimes) behave predictably.
         raw_times = [
-            (
-                rt.replace(tzinfo=None)
-                if getattr(rt, "tzinfo", None) is not None
-                else rt
-            )
+            (rt.replace(tzinfo=None) if getattr(rt, "tzinfo", None) is not None else rt)
             for rt in raw_times
         ]
 
@@ -988,8 +982,7 @@ def _transit_windows(
         for t in start_times
     ]
     stop = [
-        (t + timedelta(microseconds=500_000)).replace(microsecond=0)
-        for t in stop_times
+        (t + timedelta(microseconds=500_000)).replace(microsecond=0) for t in stop_times
     ]
     return start, stop
 

@@ -1,14 +1,15 @@
 """Tests for parameter propagation from PandoraSchedulerConfig to components."""
 
-import pytest
 from datetime import datetime
 from pathlib import Path
+
 import pandas as pd
+import pytest
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.science_calendar import (
-    generate_science_calendar,
     ScienceCalendarInputs,
+    generate_science_calendar,
 )
 from pandorascheduler_rework.visibility.catalog import build_visibility_catalog
 

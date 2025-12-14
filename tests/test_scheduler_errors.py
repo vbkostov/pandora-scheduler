@@ -4,15 +4,16 @@ These tests verify that the scheduler handles error conditions gracefully
 and provides helpful error messages when things go wrong.
 """
 
-import pytest
 from datetime import datetime
+
 import pandas as pd
+import pytest
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
-    run_scheduler,
     SchedulerInputs,
     SchedulerPaths,
+    run_scheduler,
 )
 
 

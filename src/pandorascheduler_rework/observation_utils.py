@@ -21,8 +21,8 @@ from typing import Dict, List, Optional, Sequence, cast
 
 import numpy as np
 import pandas as pd
-from pandas.errors import EmptyDataError
 from astropy.time import Time
+from pandas.errors import EmptyDataError
 from tqdm import tqdm
 
 from pandorascheduler_rework.targets.manifest import build_target_manifest
@@ -260,9 +260,10 @@ def schedule_occultation_targets(
         o_df["Visibility"] = np.nan
 
     if visit_start is not None and visit_stop is not None:
-        description = (
-            "%s to %s: Searching for occultation target from %s"
-            % (visit_start, visit_stop, try_occ_targets)
+        description = "%s to %s: Searching for occultation target from %s" % (
+            visit_start,
+            visit_stop,
+            try_occ_targets,
         )
     else:
         description = "Searching for occultation target from %s" % (try_occ_targets,)
@@ -540,9 +541,7 @@ def save_observation_time_report(
         for catalog_path in requested_hours_catalogs:
             path = Path(catalog_path)
             if not path.exists():
-                raise FileNotFoundError(
-                    f"Requested-hours catalog missing: {path}"
-                )
+                raise FileNotFoundError(f"Requested-hours catalog missing: {path}")
             try:
                 df = pd.read_csv(path)
             except EmptyDataError:
@@ -578,7 +577,10 @@ def save_observation_time_report(
                         f"Invalid 'Number of Hours Requested' for {key!r} in {path}: {hours_req!r}"
                     ) from exc
 
-                if key in requested_hours_by_target and requested_hours_by_target[key] != value:
+                if (
+                    key in requested_hours_by_target
+                    and requested_hours_by_target[key] != value
+                ):
                     chosen = max(requested_hours_by_target[key], value)
                     LOGGER.warning(
                         "Conflicting 'Number of Hours Requested' values for %r: %.2f vs %.2f; "
@@ -604,9 +606,7 @@ def save_observation_time_report(
                 )
 
     with output_file.open("w", encoding="utf-8") as handle:
-        handle.write(
-            "Target,Is Primary,Hours Requested,Hours Scheduled,Hours Delta\n"
-        )
+        handle.write("Target,Is Primary,Hours Requested,Hours Scheduled,Hours Delta\n")
         for target, duration in all_target_obs_time.items():
             label = str(target)
             is_primary = "Yes" if label in primary_targets else "No"
@@ -632,7 +632,9 @@ def save_observation_time_report(
                 )
             requested = requested_hours_by_target[label]
             delta = hours - requested
-            handle.write(f"{label},{is_primary},{requested:.2f},{hours:.2f},{delta:.2f}\n")
+            handle.write(
+                f"{label},{is_primary},{requested:.2f},{hours:.2f},{delta:.2f}\n"
+            )
 
     return output_file
 
@@ -693,7 +695,7 @@ def check_if_transits_in_obs_window(
             continue
 
         star_name = str(planet_lookup.loc[planet_name, "Star Name"])
-        
+
         try:
             visibility_file = require_planet_visibility_file(
                 targets_dir, star_name, str(planet_name)
@@ -704,13 +706,18 @@ def check_if_transits_in_obs_window(
 
         planet_data = read_parquet_cached(
             str(visibility_file),
-            columns=["Transit_Start", "Transit_Stop", "Transit_Coverage", "SAA_Overlap"],
+            columns=[
+                "Transit_Start",
+                "Transit_Stop",
+                "Transit_Coverage",
+                "SAA_Overlap",
+            ],
         )
         if planet_data is None:
             raise ValueError(
                 f"Planet visibility file exists but is unreadable: {visibility_file}"
             )
-        
+
         # Skip planets with no transits in the scheduling window (valid case)
         if planet_data.empty:
             continue
@@ -913,8 +920,3 @@ def create_aux_list(target_definition_files: Sequence[str], package_dir):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(output_path, index=False)
     return output_path
-
-
-
-
-

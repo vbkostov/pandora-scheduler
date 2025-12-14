@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-
 from pandorascheduler_rework import observation_utils as rework_helper
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 from pandorascheduler_rework.scheduler import (
@@ -213,7 +212,11 @@ def _validate_primary_visit_windows(
     We require per-target 'Obs Window (hrs)' and fail fast if any target's visit
     duration is too short to fit its transit duration plus required edge buffers.
     """
-    required_columns = {"Planet Name", "Number of Transits to Capture", "Transit Duration (hrs)"}
+    required_columns = {
+        "Planet Name",
+        "Number of Transits to Capture",
+        "Transit Duration (hrs)",
+    }
     missing = required_columns.difference(set(getattr(target_list, "columns", [])))
     if missing:
         raise ValueError(

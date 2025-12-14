@@ -210,4 +210,3 @@ class PandoraSchedulerConfig:
                 "transit_coverage_min must be in [0, 1], got %s"
                 % (self.transit_coverage_min,)
             )
-

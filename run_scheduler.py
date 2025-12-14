@@ -44,19 +44,20 @@ Usage:
 """
 
 from __future__ import annotations
+
 import argparse
 import json
 import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule, SchedulerResult
+from pandorascheduler_rework.pipeline import SchedulerResult, build_schedule
 from pandorascheduler_rework.science_calendar import (
-    generate_science_calendar,
     ScienceCalendarInputs,
+    generate_science_calendar,
 )
 
 
