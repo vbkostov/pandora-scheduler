@@ -777,7 +777,7 @@ def _schedule_secondary_exoplanet_and_auxiliary_target(
     tracker_sec,
 ) -> tuple[pd.DataFrame, str]:
 
-    fn_tmp = '/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/exoplanet_targets.csv'
+    fn_tmp = '/Users/vkostov/Documents/GitHub/pandora-scheduler/output_directory/data/exoplanet_targets.csv'
     metadata_tmp = pd.read_csv(fn_tmp)
     obs_window_non_primary = metadata_tmp[['Planet Name', 'Obs Window (hrs)']]
     sched_df_sec = observation_utils.schedule_secondary_exoplanets(tracker_sec, start, stop, obs_window_non_primary, config.transit_coverage_min)
