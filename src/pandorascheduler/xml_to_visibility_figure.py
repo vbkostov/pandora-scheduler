@@ -24,7 +24,6 @@ for visit in root[1:]:
         idx += 1
 df = df.set_index('target')
 
-
 for ii, row in df[0:].iterrows():
     obs_len = float(24*(row['stop'] - row['start']))
     if obs_len > 1.5:

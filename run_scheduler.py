@@ -465,7 +465,7 @@ def get_val(key: str, cli_arg: Any, default: Any) -> Any:
     return default
 
 
-# poetry run python run_scheduler.py --start "2026-02-11" --end "2027-02-11" --output ./output_directory --target-definitions /Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files --generate-visibility --gmat-ephemeris /Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/Pandora-600km-withoutdrag-20251018.txt --show-progress
+# poetry run python run_scheduler.py --start "2026-02-05" --end "2027-02-05" --output ./output_directory --target-definitions /Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files --generate-visibility --gmat-ephemeris /Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/Pandora-600km-withoutdrag-20251018.txt --show-progress
 
 if __name__ == "__main__":
     sys.exit(main())
