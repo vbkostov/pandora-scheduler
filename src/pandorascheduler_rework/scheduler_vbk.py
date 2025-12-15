@@ -194,6 +194,9 @@ def run_scheduler(
     all_planet_names = state.tracker["Planet Name"].dropna().unique()
     transit_windows = _load_planet_transit_windows(pd.Index(all_planet_names), inputs)
 
+    tracker_sec = state.tracker[state.tracker['Primary Target'] == 0].reset_index(drop=True).copy()
+    state.tracker = state.tracker[state.tracker['Primary Target'] == 1]
+
     while stop <= sched_stop:
         state.tracker = state.tracker.sort_values(
             by=["Primary Target", "Transit Priority"],
@@ -251,13 +254,24 @@ def run_scheduler(
             continue
 
         if temp_df.empty:
-            aux_df, log_info = _schedule_auxiliary_target(
-                start,
-                stop,
-                config,
-                state,
-                inputs,
-            )
+
+            aux_df, log_info = _schedule_secondary_exoplanet_and_auxiliary_target(
+                    start,
+                    stop,
+                    config,
+                    state,
+                    inputs,
+                    tracker_sec
+                )
+
+            # aux_df, aux_log = _schedule_auxiliary_target(
+            #     start,
+            #     obs_start,
+            #     config,
+            #     state,
+            #     inputs,
+            # )
+
             if not aux_df.empty:
                 schedule_rows.append(aux_df)
             logger.info(f"{log_info}; window {start} to {stop}")
@@ -273,6 +287,7 @@ def run_scheduler(
             config,
             start,
             obs_range,
+            tracker_sec,
         )
         schedule_rows.append(scheduled_visit)
         start = scheduled_visit["Observation Stop"].iloc[-1]
@@ -753,6 +768,56 @@ def _handle_targets_of_opportunity(
     combined = pd.concat(schedule_parts, ignore_index=True)
     return combined, obs_stop
 
+def _schedule_secondary_exoplanet_and_auxiliary_target(
+    start: datetime,
+    stop: datetime,
+    config: PandoraSchedulerConfig,
+    state: SchedulerState,
+    inputs: SchedulerInputs,
+    tracker_sec,
+) -> tuple[pd.DataFrame, str]:
+
+    fn_tmp = '/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/exoplanet_targets.csv'
+    metadata_tmp = pd.read_csv(fn_tmp)
+    obs_window_non_primary = metadata_tmp[['Planet Name', 'Obs Window (hrs)']]
+    sched_df_sec = observation_utils.schedule_secondary_exoplanets(tracker_sec, start, stop, obs_window_non_primary, config.transit_coverage_min)
+
+    if not sched_df_sec.empty:
+
+        logger.info(f"Scheduled secondary exoplanet {sched_df_sec['Target'].iloc[0]} from {sched_df_sec['Observation Start'].iloc[0]} to {sched_df_sec['Observation Stop'].iloc[0]}")
+
+        # sort_windows = np.sort([pd.Timestamp(start), pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), pd.Timestamp(stop)])
+        sort_windows = [pd.to_datetime(start), pd.to_datetime(sched_df_sec['Observation Start'].iloc[0]), pd.to_datetime(sched_df_sec['Observation Stop'].iloc[0]), pd.to_datetime(stop)]
+
+        aux_df_1, log_info = _schedule_auxiliary_target(
+            sort_windows[0],
+            sort_windows[1],
+            config,
+            state,
+            inputs,
+        )
+
+        aux_df_2, log_info = _schedule_auxiliary_target(
+            sort_windows[2],
+            sort_windows[3],
+            config,
+            state,
+            inputs,
+        )
+        
+        aux_df = pd.concat([aux_df_1, sched_df_sec, aux_df_2], axis=0)
+
+    else:
+        aux_df, log_info = _schedule_auxiliary_target(
+            start,
+            stop,
+            config,
+            state,
+            inputs,
+        )
+
+    return aux_df, log_info
+
 
 def _schedule_auxiliary_target(
     start: datetime,
@@ -1039,6 +1104,7 @@ def _schedule_primary_target(
     config: PandoraSchedulerConfig,
     start: datetime,
     obs_range: pd.DatetimeIndex,
+    tracker_sec,
 ) -> pd.DataFrame:
     if (temp_df["Transit Factor"] <= 2).any():
         ranked = temp_df.sort_values(by=["Transit Factor"]).reset_index(drop=True)
@@ -1062,13 +1128,25 @@ def _schedule_primary_target(
     dfs: list[pd.DataFrame] = []
 
     if obs_range[0].to_pydatetime() < obs_start:
-        aux_df, aux_log = _schedule_auxiliary_target(
-            start,
+
+        aux_df, aux_log = _schedule_secondary_exoplanet_and_auxiliary_target(
+            obs_range[0],
             obs_start,
             config,
             state,
             inputs,
+            tracker_sec
         )
+
+        # aux_df, aux_log = _schedule_auxiliary_target(
+        #     start,
+        #     obs_start,
+        #     config,
+        #     state,
+        #     inputs,
+        # )
+
+
         if not aux_df.empty:
             dfs.append(aux_df)
         logger.info(f"{aux_log}; window {start} to {obs_start}")
@@ -1085,7 +1163,7 @@ def _schedule_primary_target(
                 saa_cover,
                 s_factor,
                 q_factor,
-                np.nan,
+                'Primary Exoplanet',
             ]
         ],
         columns=[

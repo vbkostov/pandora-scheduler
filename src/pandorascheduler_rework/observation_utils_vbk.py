@@ -1,0 +1,778 @@
+"""Utilities for scheduling observations and building observation sequences.
+
+This module provides functions for:
+- Creating observation sequence XML elements
+- Processing visibility windows
+- Managing target parameters and observational constraints
+- Handling NIRDA and VDA payload parameters
+- Building and manipulating observation schedules
+
+This is a refactored version of the legacy helper_codes module with improved
+naming and documentation while maintaining compatibility with the existing
+scheduling pipeline.
+"""
+
+from __future__ import annotations
+
+import functools
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, cast
+
+import numpy as np
+import pandas as pd
+from astropy.time import Time
+from tqdm import tqdm
+
+from pandorascheduler_rework.targets.manifest import build_target_manifest
+from pandorascheduler_rework.utils.io import (
+    build_star_visibility_path,
+    build_visibility_path,
+    read_parquet_cached,
+)
+
+LOGGER = logging.getLogger(__name__)
+
+_PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
+
+
+def general_parameters(
+    obs_sequence_duration: int = 90,
+    occ_sequence_limit: int = 50,
+) -> tuple[timedelta, int]:
+    return obs_sequence_duration, occ_sequence_limit
+
+
+# observation_sequence imported from xml module
+
+
+# Array utilities moved to utils.array_ops
+# remove_short_sequences - imported from utils.array_ops
+# break_long_sequences - imported from utils.array_ops
+
+
+# Helper functions moved to xml module
+
+
+# _populate_nirda_parameters and _populate_vda_parameters imported from xml module
+
+
+# _target_identifier moved to utils.string_ops (imported above)
+
+
+def schedule_occultation_targets(
+    v_names,
+    starts,
+    stops,
+    visit_start,
+    visit_stop,
+    path,
+    o_df,
+    o_list,
+    try_occ_targets: str,
+):
+    starts_array = np.asarray(starts, dtype=float)
+    stops_array = np.asarray(stops, dtype=float)
+
+    schedule = pd.DataFrame(
+        {
+            "Stop": stops_array,
+            "Target": pd.Series([None] * len(starts_array), dtype=object),
+            "Visibility": np.nan,
+        },
+        index=pd.Index(starts_array, name="Start"),
+    )
+
+    if "Target" in o_df.columns:
+        o_df["Target"] = o_df["Target"].astype(object)
+
+    if "Visibility" not in o_df.columns:
+        o_df["Visibility"] = np.nan
+
+    if visit_start is not None and visit_stop is not None:
+        description = (
+            "%s to %s: Searching for occultation target from %s"
+            % (visit_start, visit_stop, try_occ_targets)
+        )
+    else:
+        description = "Searching for occultation target from %s" % (try_occ_targets,)
+
+    base_path = Path(path) if path is not None else None
+
+    base_path = Path(path) if path is not None else None
+
+    # Cache visibility data to avoid re-reading files in the second pass
+    # Key: v_name, Value: (vis_times, visibility)
+    visibility_cache: Dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+    def _get_visibility(name: str) -> Optional[tuple[np.ndarray, np.ndarray]]:
+        if name in visibility_cache:
+            return visibility_cache[name]
+
+        f_path = _resolve_visibility_file(name, base_path)
+        if f_path is None:
+            LOGGER.debug("Skipping %s; visibility file not found", name)
+            return None
+
+        data = _load_visibility_data(f_path)
+        visibility_cache[name] = data
+        return data
+
+    # PASS 1: Search for a single target that covers ALL intervals
+    for v_name in tqdm(v_names, desc=f"{description} (Pass 1)", leave=False):
+        vis_data = _get_visibility(v_name)
+        if vis_data is None:
+            continue
+
+        vis_times, visibility = vis_data
+
+        # Check if visible for ALL intervals individually (less strict)
+        all_visible = True
+        for start, stop in zip(starts_array, stops_array):
+            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            if not np.all(visibility[interval_mask] == 1):
+                all_visible = False
+                break
+
+        if not all_visible:
+            continue
+        # Apply this target to all intervals
+        for idx, start in enumerate(starts_array):
+            schedule.loc[start, "Target"] = v_name
+            schedule.loc[start, "Visibility"] = 1
+
+            match = o_list.loc[o_list["Star Name"] == v_name]
+            if not match.empty:
+                match_row = match.iloc[0]
+                o_df.loc[idx, "Target"] = v_name
+                o_df.loc[idx, "RA"] = match_row["RA"]
+                o_df.loc[idx, "DEC"] = match_row["DEC"]
+                o_df.loc[idx, "Visibility"] = 1
+
+        return o_df, True
+
+    # PASS 2: Fill gaps with multiple targets (Greedy approach)
+    for v_name in tqdm(v_names, desc=f"{description} (Pass 2)", leave=False):
+        # If schedule is full, we are done
+        if not schedule["Target"].isna().any():
+            return o_df, True
+
+        vis_data = _get_visibility(v_name)
+        if vis_data is None:
+            continue
+
+        vis_times, visibility = vis_data
+
+        for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
+            if pd.isna(schedule.loc[start, "Target"]):
+                interval_mask = (vis_times >= start) & (vis_times <= stop)
+
+                if np.all(visibility[interval_mask] == 1):
+                    schedule.loc[start, "Target"] = v_name
+                    schedule.loc[start, "Visibility"] = 1
+
+                    match = o_list.loc[o_list["Star Name"] == v_name]
+                    if match.empty:
+                        continue
+                    match_row = match.iloc[0]
+                    o_df.loc[idx, "Target"] = v_name
+                    o_df.loc[idx, "RA"] = match_row["RA"]
+                    o_df.loc[idx, "DEC"] = match_row["DEC"]
+                    o_df.loc[idx, "Visibility"] = 1
+                else:
+                    if pd.isna(schedule.loc[start, "Visibility"]):
+                        schedule.loc[start, "Visibility"] = 0
+                        o_df.loc[idx, "Visibility"] = 0
+
+    if not schedule["Target"].isna().any():
+        return o_df, True
+
+    # PASS 3: Best-effort assignment for intervals not fully covered by any
+    # single occultation target. For each remaining interval, choose the
+    # candidate with the highest minute-coverage fraction (if > 0) and
+    # assign it. This enables splitting long occultations across multiple
+    # targets when no single candidate covers the whole interval.
+    for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
+        if not pd.isna(schedule.loc[start, "Target"]):
+            continue
+
+        best_name = None
+        best_coverage = 0.0
+        for v_name in v_names:
+            vis = _get_visibility(v_name)
+            if vis is None:
+                continue
+            vis_times, visibility = vis
+            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            if interval_mask.sum() == 0:
+                continue
+            coverage_fraction = float((visibility[interval_mask] == 1).sum()) / float(
+                interval_mask.sum()
+            )
+            if coverage_fraction > best_coverage:
+                best_coverage = coverage_fraction
+                best_name = v_name
+
+        if best_name is not None and best_coverage > 0.0:
+            schedule.loc[start, "Target"] = best_name
+            schedule.loc[start, "Visibility"] = 1
+            match = o_list.loc[o_list["Star Name"] == best_name]
+            if match.empty:
+                continue
+            match_row = match.iloc[0]
+            o_df.loc[idx, "Target"] = best_name
+            o_df.loc[idx, "RA"] = match_row["RA"]
+            o_df.loc[idx, "DEC"] = match_row["DEC"]
+            o_df.loc[idx, "Visibility"] = 1
+
+    # If PASS 3 produced any assignments into o_df, treat this as a valid
+    # partial schedule and return it.
+    if "Target" in o_df.columns and o_df["Target"].notna().any():
+        return o_df, True
+
+    # PASS 4: For intervals still unassigned, split the interval into minute
+    # resolution segments and greedily assign contiguous covered runs to the
+    # candidate that covers the longest run. Build a new occ_df with one row
+    # per assigned segment and return it if any assignments were made.
+    result_rows: list[dict] = []
+    minute_scale = 1440.0
+    for idx, (start, stop) in enumerate(zip(starts_array, stops_array)):
+        if not pd.isna(schedule.loc[start, "Target"]):
+            # Already assigned by earlier passes
+            continue
+
+        # Build integer minute indices for the interval
+        start_idx = int(np.floor(start * minute_scale))
+        stop_idx = int(np.ceil(stop * minute_scale))
+        if stop_idx <= start_idx:
+            continue
+        minutes_idx = np.arange(start_idx, stop_idx)
+        if minutes_idx.size == 0:
+            continue
+
+        # Candidate coverage arrays
+        candidate_coverages: dict[str, np.ndarray] = {}
+        for v_name in v_names:
+            vis = _get_visibility(v_name)
+            if vis is None:
+                continue
+            vis_times, vis_flags = vis
+            if vis_times.size == 0:
+                continue
+            vis_min_idx = np.round(vis_times * minute_scale).astype(int)
+            visible_min_idx = set(vis_min_idx[vis_flags == 1])
+            candidate_coverages[v_name] = np.isin(
+                minutes_idx, np.fromiter(visible_min_idx, dtype=int)
+            )
+
+        i = 0
+        while i < minutes_idx.size:
+            # Find candidates that cover this minute
+            available = [name for name, arr in candidate_coverages.items() if arr[i]]
+            if not available:
+                i += 1
+                continue
+
+            # For each available candidate, compute run length of consecutive True
+            best_name = None
+            best_len = 0
+            for name in available:
+                arr = candidate_coverages[name]
+                # find first False after i
+                tail = arr[i:]
+                false_pos = np.argmax(~tail) if np.any(~tail) else tail.size
+                run_len = false_pos if false_pos > 0 else tail.size
+                if run_len > best_len:
+                    best_len = run_len
+                    best_name = name
+
+            if best_name is None or best_len == 0:
+                i += 1
+                continue
+
+            # Compute start/end mjd for this run
+            run_start_idx = minutes_idx[i]
+            run_end_idx = minutes_idx[i + best_len - 1] + 1
+            run_start_mjd = run_start_idx / minute_scale
+            run_end_mjd = run_end_idx / minute_scale
+
+            # Format start/stop as ISO UTC strings
+            try:
+                from astropy.time import Time
+
+                start_dt = Time(run_start_mjd, format="mjd", scale="utc").to_datetime()
+                stop_dt = Time(run_end_mjd, format="mjd", scale="utc").to_datetime()
+                start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                stop_str = stop_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            except Exception:
+                start_str = str(run_start_mjd)
+                stop_str = str(run_end_mjd)
+
+            match = o_list.loc[o_list["Star Name"] == best_name]
+            ra_val = (
+                match.iloc[0]["RA"]
+                if not match.empty and "RA" in match.columns
+                else float("nan")
+            )
+            dec_val = (
+                match.iloc[0]["DEC"]
+                if not match.empty and "DEC" in match.columns
+                else float("nan")
+            )
+
+            result_rows.append(
+                {
+                    "Target": best_name,
+                    "start": start_str,
+                    "stop": stop_str,
+                    "RA": ra_val,
+                    "DEC": dec_val,
+                    "Visibility": 1.0,
+                }
+            )
+
+            i += best_len
+
+    if result_rows:
+        result_df = pd.DataFrame(result_rows)
+        return result_df, True
+
+    mask = schedule["Target"].isna()
+    schedule.loc[mask, "Target"] = "No target"
+    schedule.loc[mask, "Visibility"] = 0
+
+    o_df.loc[o_df["Target"].isna(), "Target"] = "No target"
+    o_df.loc[o_df["Visibility"].isna(), "Visibility"] = 0
+
+    return o_df, False
+
+
+def save_observation_time_report(
+    all_target_obs_time: Dict[str, timedelta],
+    target_list: pd.DataFrame,
+    output_path,
+):
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    primary_targets = {
+        str(name)
+        for name in target_list.get("Planet Name", pd.Series(dtype=object)).dropna()
+    }
+
+    with output_file.open("w", encoding="utf-8") as handle:
+        handle.write("Target,Is Primary,Total Observation Time (hours)\n")
+        for target, duration in all_target_obs_time.items():
+            label = str(target)
+            is_primary = "Yes" if label in primary_targets else "No"
+            hours = duration.total_seconds() / 3600
+            handle.write(f"{label},{is_primary},{hours:.2f}\n")
+
+    return output_file
+
+
+def check_if_transits_in_obs_window(
+    tracker: pd.DataFrame,
+    temp_df: pd.DataFrame,
+    target_list: pd.DataFrame,
+    start: datetime,
+    pandora_start: datetime,
+    pandora_stop: datetime,
+    sched_start: datetime,
+    sched_stop: datetime,
+    obs_rng: pd.DatetimeIndex,
+    obs_window: timedelta,
+    transit_scheduling_weights: Sequence[float],
+    transit_coverage_min: float,
+    targets_dir: Path,
+):
+
+    result_df = temp_df.copy()
+    columns = [
+        "Planet Name",
+        "RA",
+        "DEC",
+        "Obs Start",
+        "Obs Gap Time",
+        "Transit Coverage",
+        "SAA Overlap",
+        "Schedule Factor",
+        "Transit Factor",
+        "Quality Factor",
+        "Comments",
+    ]
+
+    planet_lookup = target_list.set_index("Planet Name")
+
+    for i, row in tracker.iterrows():
+        planet_name = row.get("Planet Name")
+        if pd.isna(planet_name):
+            continue
+
+        mask = tracker["Planet Name"] == planet_name
+        needed_series = cast(pd.Series, tracker.loc[mask, "Transits Needed"])
+        if needed_series.empty:
+            continue
+        transits_needed = float(needed_series.iloc[0])
+
+        if transits_needed == 0:
+            continue
+
+        if planet_name not in planet_lookup.index:
+            LOGGER.debug("Planet %s missing from target list; skipping", planet_name)
+            continue
+
+        star_name = str(planet_lookup.loc[planet_name, "Star Name"])
+        
+        try:
+            visibility_file = _planet_visibility_file(targets_dir, star_name, str(planet_name))
+        except FileNotFoundError as e:
+            LOGGER.error(str(e))
+            raise
+
+        planet_data = read_parquet_cached(str(visibility_file))
+        if planet_data is None:
+            raise ValueError(
+                f"Planet visibility file exists but is unreadable: {visibility_file}"
+            )
+        
+        # Skip planets with no transits in the scheduling window (valid case)
+        if planet_data.empty:
+            continue
+
+        planet_data = planet_data.drop(
+            planet_data.index[planet_data["Transit_Coverage"] < transit_coverage_min]
+        ).reset_index(drop=True)
+        if planet_data.empty:
+            continue
+
+        start_times = Time(
+            planet_data["Transit_Start"].to_numpy(), format="mjd", scale="utc"
+        ).to_value("datetime")
+        stop_times = Time(
+            planet_data["Transit_Stop"].to_numpy(), format="mjd", scale="utc"
+        ).to_value("datetime")
+
+        start_series = pd.Series(list(cast(Sequence[datetime], start_times)))
+        stop_series = pd.Series(list(cast(Sequence[datetime], stop_times)))
+
+        valid_mask = start_series >= start
+        start_series = start_series.loc[valid_mask].reset_index(drop=True)
+        stop_series = stop_series.loc[valid_mask].reset_index(drop=True)
+        planet_data = planet_data.loc[valid_mask].reset_index(drop=True)
+
+        if start_series.empty:
+            continue
+
+        lifetime_mask = (pandora_start <= start_series) & (stop_series <= pandora_stop)
+        schedule_mask = (sched_start <= start_series) & (stop_series <= sched_stop)
+        lifetime_count = int(lifetime_mask.sum())
+        schedule_count = int(schedule_mask.sum())
+
+        tracker.loc[mask, "Transits Left in Lifetime"] = lifetime_count
+        tracker.loc[mask, "Transits Left in Schedule"] = schedule_count
+        tracker.loc[mask, "Transit Priority"] = lifetime_count - transits_needed
+
+        start_series = start_series.dt.floor("min")
+        stop_series = stop_series.dt.floor("min")
+
+        early_start = stop_series - timedelta(hours=20)
+        late_start = start_series - timedelta(hours=4)
+
+        try:
+            ra_tar = float(row["RA"])
+            dec_tar = float(row["DEC"])
+        except (TypeError, ValueError):
+            ra_tar = row.get("RA")
+            dec_tar = row.get("DEC")
+
+        transits_left = float(lifetime_count)
+        if transits_needed == 0:
+            continue
+
+        coverage_values = planet_data["Transit_Coverage"].to_numpy(
+            dtype=float, copy=False
+        )
+        saa_values = planet_data["SAA_Overlap"].to_numpy(dtype=float, copy=False)
+
+        for j, (window_start, window_stop) in enumerate(zip(early_start, late_start)):
+            if window_start > window_stop:
+                continue
+
+            start_range = pd.date_range(window_start, window_stop, freq="min")
+            overlap_times = obs_rng.intersection(start_range)
+            if overlap_times.empty:
+                continue
+
+            obs_start = overlap_times[0]
+            gap_time = obs_start - obs_rng[0]
+            schedule_factor = 1 - (gap_time / obs_window)
+            transit_coverage = float(coverage_values[j])
+            saa_overlap = float(saa_values[j])
+            quality_factor = (
+                (transit_scheduling_weights[0] * transit_coverage)
+                + (transit_scheduling_weights[1] * (1 - saa_overlap))
+                + (transit_scheduling_weights[2] * schedule_factor)
+            )
+
+            candidate = pd.DataFrame(
+                [
+                    [
+                        planet_name,
+                        ra_tar,
+                        dec_tar,
+                        obs_start,
+                        gap_time,
+                        transit_coverage,
+                        saa_overlap,
+                        schedule_factor,
+                        transits_left / transits_needed,
+                        quality_factor,
+                        np.nan,
+                    ]
+                ],
+                columns=columns,
+            )
+
+            if result_df.empty:
+                result_df = candidate
+            else:
+                result_df = pd.concat([result_df, candidate], ignore_index=True)
+
+    return result_df
+
+
+def process_target_files(keyword: str, *, base_path: Path) -> pd.DataFrame:
+    """Return the scheduler manifest for *keyword* targets.
+
+    Parameters
+    ----------
+    keyword
+        Category name matching a directory in the target definition
+        repository, e.g. ``"exoplanet"``.
+    base_path
+        Path to the target definition repository root (e.g. PandoraTargetList).
+    """
+    return build_target_manifest(keyword, base_path)
+
+
+def create_aux_list(target_definition_files: Sequence[str], package_dir):
+    """Build ``all_targets.csv`` from the provided target manifest CSVs.
+
+    The legacy helper concatenated the partner target lists that share a common
+    column set.  Reimplement the same behaviour explicitly to avoid importing
+    the legacy module.
+    """
+
+    if not target_definition_files:
+        raise ValueError("target_definition_files must contain at least one entry")
+
+    data_dir = Path(package_dir) / "data"
+    csv_paths: List[Path] = []
+    for name in target_definition_files:
+        candidate = data_dir / f"{name}_targets.csv"
+        if candidate.exists():
+            csv_paths.append(candidate)
+        else:
+            LOGGER.warning("Aux list source missing: %s", candidate)
+
+    if not csv_paths:
+        raise FileNotFoundError(
+            "No target definition CSVs found; unable to build all_targets.csv"
+        )
+
+    dataframes = [pd.read_csv(path) for path in csv_paths]
+
+    common_columns = set(dataframes[0].columns)
+    for frame in dataframes[1:]:
+        common_columns &= set(frame.columns)
+
+    if not common_columns:
+        raise ValueError("Target lists share no common columns; cannot build aux list")
+
+    primary_column_order = [
+        col for col in dataframes[0].columns if col in common_columns
+    ]
+
+    trimmed = [frame.loc[:, primary_column_order] for frame in dataframes]
+    combined = (
+        pd.concat(trimmed, ignore_index=True).drop_duplicates().reset_index(drop=True)
+    )
+
+    output_path = data_dir / "all_targets.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(output_path, index=False)
+
+    return output_path
+
+
+# Regex pattern moved to utils.string_ops
+
+
+# Path building functions moved to utils.io (imported above)
+
+
+# remove_suffix moved to utils.string_ops (imported above)
+
+
+@functools.lru_cache(maxsize=32)
+def _load_visibility_data(file_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load and cache visibility data from parquet or CSV file.
+
+    This function is cached to avoid repeatedly reading the same file
+    when scheduling multiple observation windows for the same target.
+    Cache size is limited to 32 files (~256 MB memory) to balance
+    performance with memory usage.
+
+    Parameters
+    ----------
+    file_path
+        Path to the visibility file (parquet or CSV).
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Time array (MJD_UTC) and visibility flags.
+    """
+    if file_path.suffix == ".csv":
+        vis = pd.read_csv(file_path, usecols=["Time(MJD_UTC)", "Visible"])
+    else:
+        vis = pd.read_parquet(file_path, columns=["Time(MJD_UTC)", "Visible"])
+    return vis["Time(MJD_UTC)"].to_numpy(), vis["Visible"].to_numpy()
+
+
+def _resolve_visibility_file(target_name: str, base_path: Path | None) -> Path | None:
+    """Find visibility file for a target in the given base path.
+    
+    The base_path should be the directory containing target subdirectories,
+    e.g., 'data/aux_targets' or 'data/targets'.
+    """
+    if base_path is None:
+        return None
+
+    candidate = build_star_visibility_path(base_path, target_name)
+    if candidate.is_file():
+        return candidate
+
+    return None
+
+
+def _planet_visibility_file(targets_dir: Path, star_name: str, planet_name: str) -> Path:
+    """Find planet visibility file, raising error if not found."""
+    candidate = build_visibility_path(targets_dir, star_name, planet_name)
+    if not candidate.is_file():
+        raise FileNotFoundError(
+            f"Planet visibility file not found: {candidate}\n"
+            f"  Star: {star_name}, Planet: {planet_name}\n"
+            f"  Expected path: {candidate}"
+        )
+    return candidate
+
+def read_priority_csv(file_path):
+    # Read the entire file
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Extract metadata
+    metadata = {}
+    for line in lines:
+        if line.startswith('#'):
+            if ':' in line:
+                key, value = line.strip('# ').split(':', 1)
+                metadata[key.strip()] = value.strip()
+        else:
+            break  # Stop when we hit non-comment lines
+
+    # Find the index where the actual CSV data starts
+    data_start = next(i for i, line in enumerate(lines) if not line.startswith('#'))
+
+    # Read the CSV data
+    df = pd.read_csv(file_path, skiprows=data_start)
+
+    return metadata, df
+
+
+def schedule_secondary_exoplanets(tracker, start, stop, obs_windows, transit_coverage_min):
+    start = pd.to_datetime(start)
+    stop = pd.to_datetime(stop)
+    secondary_targets = tracker#[tracker['Primary Target'] == 0].reset_index(drop=True)
+    for i, row in secondary_targets.iterrows():
+    
+        planet_name = secondary_targets["Planet Name"].iloc[i]
+        star_name = planet_name[0:-1]
+
+        obs_window = timedelta(hours = obs_windows[obs_windows['Planet Name'] == planet_name]['Obs Window (hrs)'].iloc[0])
+        planet_data = pd.read_csv(
+            f"/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/targets/{star_name}/{planet_name}/Visibility for {planet_name}.csv"
+        )
+        planet_data = planet_data.drop(
+            planet_data.index[(planet_data["Transit_Coverage"] < transit_coverage_min)]
+        ).reset_index(drop=True)
+
+        # Use pre-converted datetime if available (performance optimization)
+        if "Transit_Start_UTC" in planet_data.columns:
+            start_transits = pd.to_datetime(planet_data["Transit_Start_UTC"])#.to_numpy()
+        else:
+            # Fallback to MJD conversion for backward compatibility
+            start_transits = Time(
+                planet_data["Transit_Start"], format="mjd", scale="utc").to_value("datetime")
+        
+        if "Transit_Stop_UTC" in planet_data.columns:
+            end_transits = pd.to_datetime(planet_data["Transit_Stop_UTC"])#.to_numpy()
+        else:
+            # Fallback to MJD conversion for backward compatibility
+            end_transits = Time(
+                planet_data["Transit_Stop"], format="mjd", scale="utc").to_value("datetime")
+
+        # print(i, planet_name, start_transits, end_transits)
+
+        transit_dur_hrs = (end_transits - start_transits)
+        t0 = start_transits + 0.5*transit_dur_hrs
+        # obs_window = timedelta(hours = 6)
+
+        # start_timestamp = pd.Timestamp(start)
+        # stop_timestamp = pd.Timestamp(stop)
+        # p_trans = planet_data.index[
+        #     (start_timestamp <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= stop_timestamp)
+        # ]
+
+        p_trans = planet_data.index[
+            (start <= t0 - 0.5*obs_window) & (t0 + 0.5*obs_window <= stop)
+        ]
+
+        if len(p_trans) > 0:
+            # logging.info(f"p_trans: {p_trans}")
+
+            sched = pd.DataFrame({
+                "Target": [planet_name],
+                "RA": [secondary_targets['RA'].iloc[i]],
+                "DEC": [secondary_targets['DEC'].iloc[i]],
+                "Observation Start": [pd.Timestamp((t0[p_trans] - 0.5*obs_window).iloc[0])],#.strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Start_UTC'].iloc[0]],
+                "Observation Stop": [pd.Timestamp((t0[p_trans] + 0.5*obs_window).iloc[0])],#.strftime('%Y-%m-%d %H:%M:%S')],#[planet_data.iloc[p_trans]['Transit_Stop_UTC'].iloc[0]],
+                "Transit Coverage": [planet_data.iloc[p_trans]['Transit_Coverage'].iloc[0]],
+                "SAA Overlap": [planet_data.iloc[p_trans]['SAA_Overlap'].iloc[0]],
+                "Schedule Factor": [np.nan],
+                "Quality Factor": [np.nan],
+                "Comments": ['Non-primary Exoplanet']
+            })
+            
+            break
+        
+        else:
+            sched = pd.DataFrame(
+                [],
+                columns=[
+                    "Planet Name",
+                    "Obs Start",
+                    "Obs Gap Time",
+                    "Transit Coverage",
+                    "SAA Overlap",
+                    "Schedule Factor",
+                    "Transit Factor",
+                    "Quality Factor",
+                    "Comments",
+                ],
+            )
+
+    return sched
