@@ -53,3 +53,9 @@ __pycache__/
 # Outputs
 */targets/
 *.csv
+*.parquet
+*.png
+*.zip
+src/pandorascheduler/data/Pandora-600km-withoutdrag-20251018.txt
+*.pkl
+*.xml

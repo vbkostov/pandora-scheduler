@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+      {
+          "name": "Python: Pandora Scheduler with Config",
+          "type": "python",
+          "request": "launch",
+          "program": "${workspaceFolder}/run_scheduler.py",
+          "args": [
+              "--start", "2026-04-05",
+              "--end", "2027-02-05",
+              "--output", "./output_directory",
+              "--config", "${workspaceFolder}/scheduler_config.json",
+              "--show-progress"
+          ],
+          "console": "integratedTerminal",
+          "justMyCode": false,
+          "env": {"PYTHONPATH": "${workspaceFolder}${pathSeparator}${env:PYTHONPATH}"}
+      }
+  ]
+}

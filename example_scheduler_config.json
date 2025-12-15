@@ -1,0 +1,55 @@
+{
+  "#": "Example scheduler JSON. Use with --config <thisfile>. Keys: CLI values override JSON when provided.",
+
+  "obs_window_hours": 24.0,
+  "transit_coverage_min": 0.4,
+  "min_visibility": 0.5,
+
+  "transit_scheduling_weights": [0.8, 0.0, 0.2],
+
+  "# XML / sequence generation options": null,
+  "obs_sequence_duration_min": 90,
+  "occ_sequence_limit_min": 50,
+  "min_sequence_minutes": 5,
+  "break_occultation_sequences": true,
+
+  "# Standard observations (duration and cadence)": null,
+  "std_obs_duration_hours": 0.5,
+  "std_obs_frequency_days": 3.0,
+
+  "# Behavior flags": null,
+  "force_regenerate": false,
+  "use_target_list_for_occultations": false,
+  "prioritise_occultations_by_slew": false,
+
+  "# Keepout / avoidance angles (degrees)": null,
+  "visibility_sun_deg": 91.0,
+  "visibility_moon_deg": 25.0,
+  "visibility_earth_deg": 86.0,
+
+  "# Other scheduling thresholds": null,
+  "deprioritization_limit_hours": 48.0,
+  "saa_overlap_threshold": 0.0,
+  "commissioning_days": 0,
+
+  "# Metadata and filtering": null,
+  "author": "Your Name <you@example.com>",
+  "created_timestamp": "2025-12-01T00:00:00Z",
+  "visit_limit": null,
+  "target_filters": [],
+
+  "# Extra inputs used by pipeline (paths and small flags)": null,
+  "extra_inputs": {
+    "target_definition_base": "/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files",
+    "target_definition_files": [
+      "exoplanet",
+      "auxiliary-standard",
+      "monitoring-standard",
+      "occultation-standard"
+    ],
+    "generate_visibility": true,
+    "visibility_gmat": "/Users/vkostov/Documents/GitHub/pandora-scheduler/src/pandorascheduler/data/Pandora-600km-withoutdrag-20251018.txt",
+    "visibility_output_root": null,
+    "skip_manifests": false
+  }
+}
