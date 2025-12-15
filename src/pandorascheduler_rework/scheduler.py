@@ -255,22 +255,22 @@ def run_scheduler(
 
         if temp_df.empty:
 
-            aux_df, log_info = _schedule_secondary_exoplanet_and_auxiliary_target(
-                    start,
-                    stop,
-                    config,
-                    state,
-                    inputs,
-                    tracker_sec
-                )
+            # aux_df, log_info = _schedule_secondary_exoplanet_and_auxiliary_target(
+            #         start,
+            #         stop,
+            #         config,
+            #         state,
+            #         inputs,
+            #         tracker_sec
+            #     )
 
-            # aux_df, aux_log = _schedule_auxiliary_target(
-            #     start,
-            #     obs_start,
-            #     config,
-            #     state,
-            #     inputs,
-            # )
+            aux_df, aux_log = _schedule_auxiliary_target(
+                start,
+                obs_start,
+                config,
+                state,
+                inputs,
+            )
 
             if not aux_df.empty:
                 schedule_rows.append(aux_df)
@@ -1129,22 +1129,22 @@ def _schedule_primary_target(
 
     if obs_range[0].to_pydatetime() < obs_start:
 
-        aux_df, aux_log = _schedule_secondary_exoplanet_and_auxiliary_target(
-            obs_range[0],
-            obs_start,
-            config,
-            state,
-            inputs,
-            tracker_sec
-        )
-
-        # aux_df, aux_log = _schedule_auxiliary_target(
-        #     start,
+        # aux_df, aux_log = _schedule_secondary_exoplanet_and_auxiliary_target(
+        #     obs_range[0],
         #     obs_start,
         #     config,
         #     state,
         #     inputs,
+        #     tracker_sec
         # )
+
+        aux_df, aux_log = _schedule_auxiliary_target(
+            start,
+            obs_start,
+            config,
+            state,
+            inputs,
+        )
 
 
         if not aux_df.empty:
