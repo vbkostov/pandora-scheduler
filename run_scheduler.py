@@ -612,6 +612,5 @@ def get_val(key: str, cli_arg: Any, default: Any) -> Any:
     # But to support JSON fully, we'd check it here.
     return default
 
-
 if __name__ == "__main__":
     sys.exit(main())
