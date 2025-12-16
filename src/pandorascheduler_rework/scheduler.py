@@ -1325,7 +1325,7 @@ def _schedule_primary_target(
             )
             dfs.append(free_time_df)
 
-    comment_ = 'Primary Exoplanet' if state.tracker[state.tracker['Planet Name'] == planet_name]['Primary Target'].iloc[0] == 1 else 'Non-primary exoplanet'
+    comment_ = 'Primary Exoplanet Transit' if state.tracker[state.tracker['Planet Name'] == planet_name]['Primary Target'].iloc[0] == 1 else 'Secondary Exoplanet Transit'
 
     main_schedule = pd.DataFrame(
         [
@@ -1335,10 +1335,10 @@ def _schedule_primary_target(
                 obs_stop,
                 ra_value,
                 dec_value,
-                trans_cover,
-                saa_cover,
-                s_factor,
-                q_factor,
+                np.round(trans_cover, 3),
+                np.round(saa_cover, 3),
+                np.round(s_factor, 3),
+                np.round(q_factor, 3),
                 comment_,
             ]
         ],
