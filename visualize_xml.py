@@ -1,6 +1,4 @@
 from scripts.visualizer import ScheduleVisualizer
-from pandorascheduler_rework.models import ScienceCalendar, Visit, Sequence
-from astropy.time import Time
 import matplotlib.pyplot as plt
 
 from scripts.parser import parse_science_calendar
