@@ -9,7 +9,7 @@ class DummyScheduler:
 
 def main():
     # Parse calendar
-    calendar = parse_science_calendar('/Users/vkostov/Documents/GitHub/pandora-scheduler/output_directory/data/Pandora_science_calendar.xml')
+    calendar = parse_science_calendar('/Users/vkostov/Documents/GitHub/pandora-scheduler/output_directory/data/Pandora_science_calendar_test.xml')
 
     # Create a dummy scheduler
     dummy_scheduler = DummyScheduler()
