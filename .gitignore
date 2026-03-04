@@ -59,3 +59,4 @@ __pycache__/
 src/pandorascheduler/data/Pandora-600km-withoutdrag-20251018.txt
 *.pkl
 *.xml
+*.txt
