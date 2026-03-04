@@ -128,49 +128,49 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sun-avoidance",
         type=float,
-        default=91.0,
-        help="Sun avoidance angle in degrees (default: 91.0)",
+        default=None,
+        help="Sun avoidance angle in degrees (overrides config/default: 91.0)",
     )
     parser.add_argument(
         "--moon-avoidance",
         type=float,
-        default=25.0,
-        help="Moon avoidance angle in degrees (default: 25.0)",
+        default=None,
+        help="Moon avoidance angle in degrees (overrides config/default: 25.0)",
     )
     parser.add_argument(
         "--earth-avoidance",
         type=float,
-        default=86.0,
-        help="Earth avoidance angle in degrees (default: 86.0)",
+        default=None,
+        help="Earth avoidance angle in degrees (overrides config/default: 86.0)",
     )
 
     # Scheduling configuration
     parser.add_argument(
         "--schedule-step-hours",
         type=float,
-        default=24.0,
+        default=None,
         help=(
-            "Scheduler rolling window step size in hours (default: 24.0). "
+            "Scheduler rolling window step size in hours (overrides config/default: 24.0). "
             "Per-target visit duration comes from target manifests (Obs Window (hrs))."
         ),
     )
     parser.add_argument(
         "--transit-coverage",
         type=float,
-        default=0.4,
-        help="Minimum transit coverage fraction (default: 0.4)",
+        default=None,
+        help="Minimum transit coverage fraction (overrides config/default)",
     )
     parser.add_argument(
         "--weights",
         type=str,
-        default="0.8,0.0,0.2",
-        help="Schedule weights as comma-separated values: coverage,saa,schedule (default: 0.8,0.0,0.2)",
+        default=None,
+        help="Schedule weights as comma-separated values: coverage,saa,schedule (overrides config/default)",
     )
     parser.add_argument(
         "--min-visibility",
         type=float,
-        default=0.5,
-        help="Minimum visibility fraction for non-transit observations (default: 0.5)",
+        default=None,
+        help="Minimum visibility fraction for non-transit observations (overrides config/default)",
     )
 
     # Flags
@@ -234,6 +234,62 @@ def parse_datetime(date_str: str) -> datetime:
             raise ValueError(
                 f"Invalid date format: {date_str}. Expected YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
             )
+
+
+def parse_bool(value: Any, default: bool = False) -> bool:
+    """Parse booleans from bool/str/int inputs."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    return default
+
+
+def get_val(key: str, cli_arg: Any, json_config: Dict[str, Any], default: Any) -> Any:
+    """Prioritize CLI explicit value > JSON config > default."""
+    if cli_arg is not None:
+        return cli_arg
+    json_value = json_config.get(key)
+    if json_value is not None:
+        return json_value
+    return default
+
+
+def get_json_alias(json_config: Dict[str, Any], *keys: str, default: Any = None) -> Any:
+    """Return the first non-null value found among key aliases."""
+    for key in keys:
+        value = json_config.get(key)
+        if value is not None:
+            return value
+    return default
+
+
+def parse_weights(raw: Any, default: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Parse scheduling weights from CLI/JSON into a 3-tuple."""
+    if raw is None:
+        return default
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+    else:
+        try:
+            parts = list(raw)
+        except TypeError as exc:
+            raise ValueError(
+                "Weights must be a comma-separated string or a list/tuple of three numbers."
+            ) from exc
+    if len(parts) != 3:
+        raise ValueError(
+            f"Expected exactly 3 weights (coverage,saa,schedule), got {len(parts)}: {parts!r}"
+        )
+    return (float(parts[0]), float(parts[1]), float(parts[2]))
 
 
 def print_summary(result: SchedulerResult, xml_path: Optional[Path]) -> None:
@@ -460,64 +516,108 @@ def main() -> int:
             with open(args.config, "r") as f:
                 json_config = json.load(f)
 
-        # Default weights if not provided
-        transit_scheduling_weights = (0.8, 0.0, 0.2)
+        # Defaults
+        default_weights = (0.8, 0.0, 0.2)
+        default_target_definition_files = [
+            "exoplanet",
+            "auxiliary-standard",
+            "monitoring-standard",
+            "occultation-standard",
+        ]
 
-        # Resolve target definition base (explicit path only)
+        # Build extra_inputs from JSON first, then apply CLI overrides.
+        extra_inputs_raw = json_config.get("extra_inputs", {})
+        extra_inputs: Dict[str, Any] = (
+            dict(extra_inputs_raw) if isinstance(extra_inputs_raw, dict) else {}
+        )
+
+        # Resolve target definition base path (CLI > JSON extra_inputs)
         target_def_base = args.target_definitions
+        if target_def_base is None:
+            target_def_base = extra_inputs.get("target_definition_base")
+        if target_def_base:
+            extra_inputs["target_definition_base"] = Path(target_def_base).expanduser().resolve()
+            if not extra_inputs.get("target_definition_files"):
+                extra_inputs["target_definition_files"] = default_target_definition_files
 
-        # Resolve visibility GMAT file (explicit path only)
+        # Resolve visibility GMAT path (CLI > JSON extra_inputs > top-level JSON)
         visibility_gmat = args.gmat_ephemeris
+        if visibility_gmat is None:
+            visibility_gmat = extra_inputs.get("visibility_gmat") or json_config.get(
+                "visibility_gmat"
+            )
+
+        # Determine whether visibility generation was requested
+        generate_visibility = (
+            args.generate_visibility
+            or parse_bool(json_config.get("generate_visibility"), False)
+            or parse_bool(extra_inputs.get("generate_visibility"), False)
+        )
+        if generate_visibility:
+            extra_inputs["generate_visibility"] = True
+
+        # Skip manifests (CLI > JSON extra_inputs)
+        if args.skip_manifests:
+            extra_inputs["skip_manifests"] = True
+        else:
+            extra_inputs["skip_manifests"] = parse_bool(
+                extra_inputs.get("skip_manifests"), False
+            )
 
         # 2. Validate Inputs
-        if args.generate_visibility and not target_def_base:
+        if generate_visibility and not target_def_base:
             logger.error(
                 "Visibility generation requires target definitions. "
-                "Please provide target definitions via --target-definitions"
+                "Please provide target definitions via --target-definitions or config.extra_inputs.target_definition_base"
             )
             return 1
 
-        # Determine whether visibility generation was requested (CLI or JSON)
-        generate_visibility = args.generate_visibility or json_config.get(
-            "generate_visibility", False
-        )
-        # `config` is not yet constructed here, so check the CLI/ENV visibility GMAT
         if generate_visibility and visibility_gmat is None:
             logger.warning(
                 "Visibility generation requested but no GMAT ephemeris provided."
             )
 
-        # Build PandoraSchedulerConfig with the dataclass field names and types
+        # Build PandoraSchedulerConfig with full CLI > JSON > default precedence
         schedule_step_hours = float(
-            get_val("schedule_step_hours", args.schedule_step_hours, 24.0)
+            get_val("schedule_step_hours", args.schedule_step_hours, json_config, 24.0)
         )
-        transit_cov = float(get_val("transit_coverage_min", args.transit_coverage, 0.4))
-        min_vis = float(get_val("min_visibility", args.min_visibility, 0.5))
+        transit_cov = float(
+            get_val("transit_coverage_min", args.transit_coverage, json_config, 0.4)
+        )
+        min_vis = float(get_val("min_visibility", args.min_visibility, json_config, 0.5))
+        transit_weights_tuple = parse_weights(
+            args.weights if args.weights is not None else json_config.get("transit_scheduling_weights"),
+            default_weights,
+        )
 
-        # Coerce unified transit_scheduling_weights from JSON or CLI into a 3-tuple
-        raw_transit_weights = (
-            json_config.get("transit_scheduling_weights") or transit_scheduling_weights
-        )
-        if isinstance(raw_transit_weights, str):
-            raw_transit_weights = tuple(
-                float(x.strip()) for x in raw_transit_weights.split(",")
+        sun_avoidance = float(
+            args.sun_avoidance
+            if args.sun_avoidance is not None
+            else get_json_alias(
+                json_config, "sun_avoidance_deg", "visibility_sun_deg", default=91.0
             )
-        transit_weights_tuple = tuple(float(x) for x in raw_transit_weights)
+        )
+        moon_avoidance = float(
+            args.moon_avoidance
+            if args.moon_avoidance is not None
+            else get_json_alias(
+                json_config, "moon_avoidance_deg", "visibility_moon_deg", default=25.0
+            )
+        )
+        earth_avoidance = float(
+            args.earth_avoidance
+            if args.earth_avoidance is not None
+            else get_json_alias(
+                json_config, "earth_avoidance_deg", "visibility_earth_deg", default=86.0
+            )
+        )
 
-        extra_inputs: Dict[str, Any] = {}
-        if target_def_base:
-            extra_inputs["target_definition_base"] = Path(target_def_base)
-            # When target definitions are provided, we need to specify which categories to process.
-            # These map to the standard directory names in the PandoraTargetList repository.
-            extra_inputs["target_definition_files"] = [
-                "exoplanet",
-                "auxiliary-standard",
-                "monitoring-standard",
-                "occultation-standard",
-            ]
-
-        if args.skip_manifests:
-            extra_inputs["skip_manifests"] = True
+        show_progress = args.show_progress or parse_bool(
+            json_config.get("show_progress"), False
+        )
+        use_legacy_mode = args.legacy_mode or parse_bool(
+            json_config.get("use_legacy_mode"), False
+        )
 
         # Visibility GMAT goes into the typed field `gmat_ephemeris` on the config
         if visibility_gmat is None:
@@ -538,11 +638,42 @@ def main() -> int:
             commissioning_days=int(json_config.get("commissioning_days", 0)),
             # Weights
             transit_scheduling_weights=transit_weights_tuple,
+            # Keepout angles
+            sun_avoidance_deg=sun_avoidance,
+            moon_avoidance_deg=moon_avoidance,
+            earth_avoidance_deg=earth_avoidance,
+            # XML generation
+            obs_sequence_duration_min=int(json_config.get("obs_sequence_duration_min", 90)),
+            occ_sequence_limit_min=int(json_config.get("occ_sequence_limit_min", 50)),
+            min_sequence_minutes=int(json_config.get("min_sequence_minutes", 5)),
+            break_occultation_sequences=parse_bool(
+                json_config.get("break_occultation_sequences"), True
+            ),
+            # Standard observations
+            std_obs_duration_hours=float(json_config.get("std_obs_duration_hours", 0.5)),
+            std_obs_frequency_days=float(json_config.get("std_obs_frequency_days", 3.0)),
+            # Behavior flags
+            force_regenerate=parse_bool(json_config.get("force_regenerate"), False),
+            use_target_list_for_occultations=parse_bool(
+                json_config.get("use_target_list_for_occultations"), False
+            ),
+            prioritise_occultations_by_slew=parse_bool(
+                json_config.get("prioritise_occultations_by_slew"), False
+            ),
+            # Metadata
+            author=json_config.get("author"),
+            created_timestamp=json_config.get("created_timestamp"),
+            visit_limit=(
+                int(json_config["visit_limit"])
+                if json_config.get("visit_limit") is not None
+                else None
+            ),
+            target_filters=tuple(json_config.get("target_filters", ()) or ()),
             # Extra inputs for pipeline
             extra_inputs=extra_inputs,
             # Flags
-            show_progress=args.show_progress,
-            use_legacy_mode=args.legacy_mode,
+            show_progress=show_progress,
+            use_legacy_mode=use_legacy_mode,
         )
 
         # 3. Ensure targets manifest location exists (may be an output/data dir)
@@ -560,7 +691,7 @@ def main() -> int:
 
         # 4. Run Scheduler (using new API)
         logger.info("Starting scheduler pipeline...")
-        if args.legacy_mode:
+        if config.use_legacy_mode:
             logger.info("Legacy mode enabled - using MJD-based visibility filtering")
         result = build_schedule(config)
 
@@ -602,15 +733,6 @@ def main() -> int:
             print(f"\nProfiling results written to {args.profile_output}")
             stats.print_stats(30)
 
-
-def get_val(key: str, cli_arg: Any, default: Any) -> Any:
-    """Helper to prioritize CLI arg > JSON config > default."""
-    if cli_arg is not None:
-        return cli_arg
-    # Note: json_config would need to be passed in or global
-    # For simplicity in this script structure, we'll rely on CLI or defaults mostly
-    # But to support JSON fully, we'd check it here.
-    return default
 
 if __name__ == "__main__":
     sys.exit(main())
