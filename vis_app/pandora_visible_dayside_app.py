@@ -668,6 +668,7 @@ def _current_target_label() -> str:
 
 
 st.title(f"Pandora Visibility for {_current_target_label()}")
+st.caption("Mode: orbital elements + Astropy (not GMAT)")
 
 def _sync_target_ra_from_slider() -> None:
     value = float(st.session_state.target_ra_slider)
