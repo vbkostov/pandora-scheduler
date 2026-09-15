@@ -1,17 +1,20 @@
-import logging
 import os
-import pickle
-import warnings
-from datetime import datetime, timedelta
-from typing import Optional
-
-import helper_codes
 import numpy as np
 import pandas as pd
-import transits
+import pickle
 from astropy.time import Time
-from erfa import ErfaWarning
+from astropy.coordinates import SkyCoord
+from datetime import datetime, timedelta
+import logging
+import transits
 from tqdm import tqdm
+import helper_codes
+from multiprocessing import Pool
+from functools import partial
+from typing import Optional
+
+import warnings
+from erfa import ErfaWarning
 
 # Suppress only ERFA warnings
 warnings.filterwarnings('ignore', category=ErfaWarning)
@@ -300,7 +303,7 @@ def Schedule(
                     obs_start = overlap_times[0]
 
                     if obs_rng[0] < obs_start:
-                        free = [["FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
+                        free = [[f"FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
                         free = pd.DataFrame(free, columns=["Target", "Observation Start", "Observation Stop"])
                         sched_df = pd.concat([sched_df, free], axis=0).reset_index(drop=True)
                     
@@ -344,7 +347,7 @@ def Schedule(
                         tf_warning += f"Warning: {planet_name} has MTRM > 1 and is transiting during ToO. "
 
                 if obs_rng[0] < obs_start:
-                    free = [["FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
+                    free = [[f"FREE PRE-TOO, REPLACE WITH AUX", obs_rng[0], obs_start]]
                     free = pd.DataFrame(free, columns=["Target", "Observation Start", "Observation Stop"])
                     sched_df = pd.concat([sched_df, free], axis=0).reset_index(drop=True)
 
@@ -569,11 +572,13 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
             vis_file = f"{PACKAGEDIR}/data/aux_targets/{std_names[nn]}/Visibility for {std_names[nn]}.csv"
             vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
 
-            # Optimize: Convert start/stop to MJD and filter directly
-            start_mjd = Time(start).mjd
-            stop_mjd = Time(start + obs_std_dur).mjd
-            
-            time_mask = (vis["Time(MJD_UTC)"] >= start_mjd) & (vis["Time(MJD_UTC)"] <= stop_mjd)
+            vis_times = Time(
+                vis["Time(MJD_UTC)"].to_numpy(),
+                format="mjd",
+                scale="utc",
+            ).to_datetime()
+            vis_times = pd.to_datetime(vis_times)
+            time_mask = (vis_times >= start) & (vis_times <= start + obs_std_dur)
             vis_filtered = vis.loc[time_mask]
 
             if not vis_filtered.empty and vis_filtered['Visible'].all():
@@ -648,11 +653,13 @@ def Schedule_aux(start, stop, aux_key, non_primary_obs_time, min_visibility, dep
             try:
                 vis_file = f"{PACKAGEDIR}/data/aux_targets/{names[n]}/Visibility for {names[n]}.csv"
                 vis = pd.read_csv(vis_file, usecols=["Time(MJD_UTC)", "Visible"])
-                # Optimize: Convert start/stop to MJD and filter directly
-                start_mjd = Time(start).mjd
-                stop_mjd = Time(stop).mjd
-                
-                time_mask = (vis["Time(MJD_UTC)"] >= start_mjd) & (vis["Time(MJD_UTC)"] <= stop_mjd)
+                vis_times = Time(
+                    vis["Time(MJD_UTC)"].to_numpy(),
+                    format="mjd",
+                    scale="utc",
+                ).to_datetime()
+                vis_times = pd.to_datetime(vis_times)
+                time_mask = (vis_times >= start) & (vis_times <= stop)
                 vis_filtered = vis.loc[time_mask]
 
                 if not vis_filtered.empty and vis_filtered['Visible'].all():

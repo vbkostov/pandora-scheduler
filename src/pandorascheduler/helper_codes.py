@@ -1,17 +1,17 @@
-import json
-import logging
-import os
-import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-from functools import partial
-from multiprocessing import Pool
-
-import numpy as np
+import json
 import pandas as pd
-import requests
+import numpy as np
 from astropy.time import Time
 from tqdm import tqdm
+import os
+import re
+import logging
+import requests
+from multiprocessing import Pool
+from functools import partial
+from typing import Iterable, List, Sequence, Tuple
 
 PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(PACKAGEDIR, "..", ".."))
@@ -121,7 +121,23 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 import ast
                 ras_ = np.array([ast.literal_eval(coord)[0] for coord in roi_coord_values.iloc[0]])
                 ras_[0] = targ_info["RA"].iloc[0]
+                # all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
+                # # Ensure we have a 2D array of shape (n_rois, 2)
+                # if all_columns.size == 0:
+                #     all_columns = np.array([[targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]])
+                # else:
+                #     if all_columns.ndim == 1:
+                #         if all_columns.size == 2:
+                #             all_columns = all_columns.reshape((1, 2))
+                #         elif all_columns.size % 2 == 0:
+                #             all_columns = all_columns.reshape((-1, 2))
+                #         else:
+                #             all_columns = np.atleast_2d(all_columns)
+                #     all_columns[0, :] = [targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]
                 vda_subelement_ = ET.SubElement(vda, xml_key)
+                # for jj in range(all_columns.shape[0]):
+                #     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'RA{jj+1}')
+                #     vda_subelement_tmp.text = f'{all_columns[jj,0]:.6f}'
                 for jj in range(len(ras_)):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'RA{jj+1}')
                     vda_subelement_tmp.text = f'{ras_[jj]:.6f}'
@@ -131,7 +147,23 @@ def observation_sequence(visit, obs_seq_ID, t_name, priority, start, stop, ra, d
                 import ast
                 decs_ = np.array([ast.literal_eval(coord)[1] for coord in roi_coord_values.iloc[0]])
                 decs_[0] = targ_info["DEC"].iloc[0]
+                # all_columns = np.asarray([ast.literal_eval(item) for item in roi_coord_values.values[0]])
+                # # Ensure we have a 2D array of shape (n_rois, 2)
+                # if all_columns.size == 0:
+                #     all_columns = np.array([[targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]])
+                # else:
+                #     if all_columns.ndim == 1:
+                #         if all_columns.size == 2:
+                #             all_columns = all_columns.reshape((1, 2))
+                #         elif all_columns.size % 2 == 0:
+                #             all_columns = all_columns.reshape((-1, 2))
+                #         else:
+                #             all_columns = np.atleast_2d(all_columns)
+                #     all_columns[0, :] = [targ_info["RA"].iloc[0], targ_info["DEC"].iloc[0]]
                 vda_subelement_ = ET.SubElement(vda, xml_key)
+                # for jj in range(all_columns.shape[0]):
+                #     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'Dec{jj+1}')
+                #     vda_subelement_tmp.text = f'{all_columns[jj,1]:.6f}'
                 for jj in range(len(decs_)):
                     vda_subelement_tmp = ET.SubElement(vda_subelement_, f'Dec{jj+1}')
                     vda_subelement_tmp.text = f'{decs_[jj]:.6f}'
@@ -239,10 +271,9 @@ def break_long_sequences(start, end, step):
 #
 #
 def read_json_files(targ_list, fn_tmp):
-    import json
-
-    import numpy as np
     import pandas as pd
+    import numpy as np
+    import json
     target_list_copy = targ_list.copy()
     with open(fn_tmp, 'r') as file:
         data = json.load(file)
@@ -285,9 +316,9 @@ def read_json_files(targ_list, fn_tmp):
 #
 #
 def update_target_list(targ_list, pl_names, which_targets):
-    import glob
     import os
     import warnings
+    import glob
     warnings.filterwarnings("ignore", category=FutureWarning)
     # filtered_targ_list = targ_list[targ_list["Planet Name"].isin(pl_names)]
     # updated_targ_list = filtered_targ_list.copy()
@@ -338,9 +369,8 @@ def update_target_list(targ_list, pl_names, which_targets):
     return updated_targ_list
 
 def find_first_visible_target(start, stop, names):
-    from astropy.time import Time
     from tqdm import tqdm
-
+    from astropy.time import Time
     # for n, name in tqdm(enumerate(names), desc=f"Finding visible aux target for {start} to {stop}", total=len(names)):
     for n in tqdm(range(len(names)), desc="Finding visible aux target for " + str(start) + ' to ' + str(stop)):
         try:
@@ -352,7 +382,7 @@ def find_first_visible_target(start, stop, names):
             # Convert to Time object and filter in one step
             time_mask = (Time(vis["Time(MJD_UTC)"], format='mjd', scale='utc') >= start) & \
                         (Time(vis["Time(MJD_UTC)"], format='mjd', scale='utc') <= stop)
-            
+
             vis_filtered = vis[time_mask]
             
             if not vis_filtered.empty and vis_filtered['Visible'].all():
@@ -399,8 +429,8 @@ def find_visible_targets(names, start, stop):
                 targ_vis.append(visibility)
     
     return vis_all_targs, vis_any_targs, targ_vis
-
-
+#
+#
 def process_visibility(v_names, starts, stops, path):
 
     results = []
@@ -429,8 +459,8 @@ def process_visibility(v_names, starts, stops, path):
             })
     
     return results
-
-
+#
+#
 def create_visibility_dataframe(results):
     # Create a dictionary to store data for the DataFrame
     data = {}
@@ -956,6 +986,7 @@ def process_target_files(keyword):
                 metadata, data = read_priority_csv(priority_fn)
                 priority_ = data[data["target"] == original_filename]["priority"].values[0]
                 flat_data['Priority'] = priority_
+
             # Add NIRDA and VDA readout scheme data
             nirda_setting = flat_data.get('NIRDA Setting')
             vda_setting = flat_data.get('VDA Setting')
@@ -1071,11 +1102,10 @@ def read_priority_csv(file_path):
     return metadata, df
 
 def create_aux_list(target_definition_files, PACKAGEDIR):
-    import os
-    from functools import reduce
-
     import pandas as pd
-
+    from functools import reduce
+    import os
+    
     # Create full file paths
     file_paths = [f"{PACKAGEDIR}/data/{file}_targets.csv" for file in target_definition_files]
 
@@ -1112,7 +1142,7 @@ def create_aux_list(target_definition_files, PACKAGEDIR):
     combined_df = combined_df[sorted_columns]
 
     # Write the result to a new CSV file
-    output_file = f"{PACKAGEDIR}/data/aux_list_new.csv"
+    output_file = f"{PACKAGEDIR}/data/all_targets.csv"
     combined_df.to_csv(output_file, index=False)
 
     # print(f"Combined CSV created with {len(common_columns)} common columns.")
@@ -1273,6 +1303,7 @@ def check_if_transits_in_obs_window(tracker, temp_df, target_list, start, pandor
     return temp_df
 
 def remove_suffix(name):
+    import re
     return re.sub(r' [a-z]$', '', name)
 
 
@@ -1289,186 +1320,185 @@ def find_file(filename):
     
     return None  # File not found in any of the directories
 
-# old version, not used.
-# def sch_occ_old_but_working(starts, stops, list_path, sort_key=None, prev_obs = None):#, position = 0):#**kwargs):
+def sch_occ_old_but_working(starts, stops, list_path, sort_key=None, prev_obs = None):#, position = 0):#**kwargs):
     
-#     #build empty dataframe except for starts and stops
-#     e_sched = [['',datetime.strftime(starts[s], "%Y-%m-%dT%H:%M:%SZ"),datetime.strftime(stops[s], "%Y-%m-%dT%H:%M:%SZ"), '', ''] for s in range(len(starts))]
-#     o_df = pd.DataFrame(e_sched,columns=["Target","start","stop", "RA", "DEC"])
+    #build empty dataframe except for starts and stops
+    e_sched = [['',datetime.strftime(starts[s], "%Y-%m-%dT%H:%M:%SZ"),datetime.strftime(stops[s], "%Y-%m-%dT%H:%M:%SZ"), '', ''] for s in range(len(starts))]
+    o_df = pd.DataFrame(e_sched,columns=["Target","start","stop", "RA", "DEC"])
     
-#     #convert to mjd to compare with visibility data
-#     starts=Time(starts, format='datetime').to_value('mjd')
-#     stops=Time(stops, format='datetime').to_value('mjd')
+    #convert to mjd to compare with visibility data
+    starts=Time(starts, format='datetime').to_value('mjd')
+    stops=Time(stops, format='datetime').to_value('mjd')
     
-#     if sort_key == None:
-#         #No occluded target scheduling, free time
-#         starts=starts.to_value('datetime')
-#         stops=stops.to_value('datetime')
-#         free = [["Free Time",datetime.strftime(starts[s], "%Y-%m-%dT%H:%M:%SZ"),datetime.strftime(stops[s], "%Y/%m/%d, %H:%M:%S"), '', ''] for s in range(len(starts))]
-#         o_df = pd.DataFrame(free, columns=["Target", "start", "stop", "RA", "DEC"])
+    if sort_key == None:
+        #No occluded target scheduling, free time
+        starts=starts.to_value('datetime')
+        stops=stops.to_value('datetime')
+        free = [["Free Time",datetime.strftime(starts[s], "%Y-%m-%dT%H:%M:%SZ"),datetime.strftime(stops[s], "%Y/%m/%d, %H:%M:%S"), '', ''] for s in range(len(starts))]
+        o_df = pd.DataFrame(free, columns=["Target", "start", "stop", "RA", "DEC"])
     
-#     else:       
-#         o_list = pd.read_csv(list_path)
-#         ras=o_list['RA']
-#         decs=o_list['DEC']
+    else:       
+        o_list = pd.read_csv(list_path)
+        ras=o_list['RA']
+        decs=o_list['DEC']
         
-#         if sort_key == 'closest':
-#             #sort name list based on minimized sky distance
-#             #prev_obs must be specified as an array consisting of ra and dec (in degrees) for the previous observation
-#             #e.g. [359.10775132017, -49.28901740485]
-#             #this seeks to minimize slew distance to an occultation target, though actual slew sims are not performed
-#             try:
-#                 po_sc=SkyCoord(unit='deg', ra=prev_obs[0], dec=prev_obs[1])
-#                 oc_sc=[SkyCoord(unit='deg', ra=ras[n], dec=decs[n]) for n in range(len(ras))]
+        if sort_key == 'closest':
+            #sort name list based on minimized sky distance
+            #prev_obs must be specified as an array consisting of ra and dec (in degrees) for the previous observation
+            #e.g. [359.10775132017, -49.28901740485]
+            #this seeks to minimize slew distance to an occultation target, though actual slew sims are not performed
+            try:
+                po_sc=SkyCoord(unit='deg', ra=prev_obs[0], dec=prev_obs[1])
+                oc_sc=[SkyCoord(unit='deg', ra=ras[n], dec=decs[n]) for n in range(len(ras))]
 
-#                 dif=[oc_sc[n].separation(po_sc).deg for n in range(len(oc_sc))]
-#                 o_list['sky_dif'] = dif
-#                 o_list = o_list.sort_values(by='sky_dif').reset_index(drop=True)
+                dif=[oc_sc[n].separation(po_sc).deg for n in range(len(oc_sc))]
+                o_list['sky_dif'] = dif
+                o_list = o_list.sort_values(by='sky_dif').reset_index(drop=True)
                 
-#             except NameError:
-#                 logger.info('No previous observation specified; defaulting to random auxiliary target ordering.')
-#                 o_list.sample(frac=1).reset_index(drop=True)
-#         else:
-#             #default sort is random
-#             o_list.sample(frac=1).reset_index(drop=True)
+            except NameError:
+                logger.info('No previous observation specified; defaulting to random auxiliary target ordering.')
+                o_list.sample(frac=1).reset_index(drop=True)
+        else:
+            #default sort is random
+            o_list.sample(frac=1).reset_index(drop=True)
         
-#         v_names = o_list['Star Name']
-#         v_names=np.array(v_names)
-#         #For prioritization via flag later
-#         o_flag = o_list['Priority']
-#         #Reload these
-#         ras=o_list['RA']
-#         decs=o_list['DEC']
+        v_names = o_list['Star Name']
+        v_names=np.array(v_names)
+        #For prioritization via flag later
+        o_flag = o_list['Priority']
+        #Reload these
+        ras=o_list['RA']
+        decs=o_list['DEC']
 
-#         multi_target_occultation = True#False
+        multi_target_occultation = True#False
 
-#         d_flag = False
+        d_flag = False
         
-#         #empty dataframe to hold visibility information for multiple targets
-#         v_ = np.asarray(np.zeros(len(starts)), dtype=bool)
-#         v_df = pd.DataFrame([v_])
-#         vis_df = pd.DataFrame(columns=range(len(starts))).astype(bool)
-#         d_flag = False
-#         for n in range(len(v_names)):
-#             try:
-#                 if (list_path == tar_path) or (list_path == tar_path_ALL):
-#                     vis=pd.read_csv(f"{PACKAGEDIR}/data/targets/{v_names[n]}/Visibility for {v_names[n]}.csv")
-#                 elif list_path == aux_path:
-#                     vis=pd.read_csv(f"{PACKAGEDIR}/data/aux_targets/{v_names[n]}/Visibility for {v_names[n]}.csv")
-#                 vis_ = vis['Time(MJD_UTC)']
+        #empty dataframe to hold visibility information for multiple targets
+        v_ = np.asarray(np.zeros(len(starts)), dtype=bool)
+        v_df = pd.DataFrame([v_])
+        vis_df = pd.DataFrame(columns=range(len(starts))).astype(bool)
+        d_flag = False
+        for n in range(len(v_names)):
+            try:
+                if (list_path == tar_path) or (list_path == tar_path_ALL):
+                    vis=pd.read_csv(f"{PACKAGEDIR}/data/targets/{v_names[n]}/Visibility for {v_names[n]}.csv")
+                elif list_path == aux_path:
+                    vis=pd.read_csv(f"{PACKAGEDIR}/data/aux_targets/{v_names[n]}/Visibility for {v_names[n]}.csv")
+                vis_ = vis['Time(MJD_UTC)']
                 
-#                 #array to hold visibility info for this target
-#                 v_ar = np.asarray(np.zeros(len(starts)), dtype=bool)
-#                 v_ar_any = np.asarray(np.zeros(len(starts)), dtype=bool)
-#                 #iterate through occultation periods and see if v_names[n] is visible for all of them
-#                 vis_f = False
-#                 for s in range(len(starts)):
-#                     #get occultation time window
-#                     win = vis.index[(vis_ >= starts[s]) & (vis_ <= stops[s])].tolist()
-#                     if np.all(vis['Visible'][win] == 1):# or vis_ratio >= 0.6: 
-#                         # UNCOMMENT THE REST OF THE LINE ABOVE FOR TARGETS THAT ARE NOT VISIBLE FOR MANY HOURS AND ALLOW "OCCULTATION"
-#                         # TARGET TO BE CONSIDERED AS VISIBLE >= 60% OF 90 MINUTES!!!
-#                         v_ar[s] = True               
-#                     else:
-#                         vis_f = True
+                #array to hold visibility info for this target
+                v_ar = np.asarray(np.zeros(len(starts)), dtype=bool)
+                v_ar_any = np.asarray(np.zeros(len(starts)), dtype=bool)
+                #iterate through occultation periods and see if v_names[n] is visible for all of them
+                vis_f = False
+                for s in range(len(starts)):
+                    #get occultation time window
+                    win = vis.index[(vis_ >= starts[s]) & (vis_ <= stops[s])].tolist()
+                    if np.all(vis['Visible'][win] == 1):# or vis_ratio >= 0.6: 
+                        # UNCOMMENT THE REST OF THE LINE ABOVE FOR TARGETS THAT ARE NOT VISIBLE FOR MANY HOURS AND ALLOW "OCCULTATION"
+                        # TARGET TO BE CONSIDERED AS VISIBLE >= 60% OF 90 MINUTES!!!
+                        v_ar[s] = True               
+                    else:
+                        vis_f = True
 
-#                     # VK START
-#                     # CHECK THE FRACTION OF TIME OCCULTATION TARGET IS VISIBILE DURING OCCULTATION 
-#                     if len(vis['Visible'][win]) > 0.:
-#                         vis_ratio = len(vis['Visible'][win][vis['Visible'][win] == 1])/len(vis['Visible'][win])
-#                     # VK END
+                    # VK START
+                    # CHECK THE FRACTION OF TIME OCCULTATION TARGET IS VISIBILE DURING OCCULTATION 
+                    if len(vis['Visible'][win]) > 0.:
+                        vis_ratio = len(vis['Visible'][win][vis['Visible'][win] == 1])/len(vis['Visible'][win])
+                    # VK END
 
-#                     # print(v_names[n], Time(starts[s], format="mjd", scale="utc").to_value("datetime").strftime("%H:%M:%S"), \
-#                     #     Time(stops[s], format="mjd", scale="utc").to_value("datetime").strftime("%H:%M:%S"), vis_ratio)
-#                             # len(vis['Visible'][win][vis['Visible'][win] == 1]), len(vis['Visible'][win]))#np.asarray(vis['Visible'][win]))
+                    # print(v_names[n], Time(starts[s], format="mjd", scale="utc").to_value("datetime").strftime("%H:%M:%S"), \
+                    #     Time(stops[s], format="mjd", scale="utc").to_value("datetime").strftime("%H:%M:%S"), vis_ratio)
+                            # len(vis['Visible'][win][vis['Visible'][win] == 1]), len(vis['Visible'][win]))#np.asarray(vis['Visible'][win]))
 
-#                 # vis_df.loc[len(vis_df)] = v_ar
-#                 # vis_df_sum = np.sum(np.asarray(vis_df), axis = 0)
-#                 # print(n, vis_df_sum)
-#                 # if np.all(vis_df_sum > 0):
-#                 #     stop
+                # vis_df.loc[len(vis_df)] = v_ar
+                # vis_df_sum = np.sum(np.asarray(vis_df), axis = 0)
+                # print(n, vis_df_sum)
+                # if np.all(vis_df_sum > 0):
+                #     stop
 
-#                 #if not visible for all times, check if any entry in v_df and this one cover the total occultation time
-#                 if vis_f:
-#                     if not d_flag:
+                #if not visible for all times, check if any entry in v_df and this one cover the total occultation time
+                if vis_f:
+                    if not d_flag:
 
-#                         # vis_df_sum = np.sum(np.asarray(vis_df), axis = 0)
-#                         # # print(n, vis_df_sum)
-#                         # if np.all(vis_df_sum > 0):
-#                         #     d_flag = True
-#                         # else:
-#                         #     vis_df.loc[len(vis_df)] = v_ar
+                        # vis_df_sum = np.sum(np.asarray(vis_df), axis = 0)
+                        # # print(n, vis_df_sum)
+                        # if np.all(vis_df_sum > 0):
+                        #     d_flag = True
+                        # else:
+                        #     vis_df.loc[len(vis_df)] = v_ar
 
-#                         v_arr=np.asarray(v_df)
-#                         overlap=np.where([np.all((v_arr+np.asarray(v_ar, dtype=bool))[i]) for i in range(len(v_arr))])[0]
-#                         if len(overlap) > 0:
-#                             #at least one entry has visibility that covers the total time along with the current target
-#                             #take both and enter them in o_df in their respective times, prefering the closer one
-#                             m=overlap[0]
-#                             v1=v_arr[m]
-#                             for s in range(len(starts)):
-#                                 if v1[s]:
-#                                     o_df['Target'][s]=v_names[m]
-#                                     o_df['RA'][s]=str(ras[m])
-#                                     o_df['DEC'][s]=str(decs[m])
-#                                 else:
-#                                     o_df['Target'][s]=v_names[n]
-#                                     o_df['RA'][s]=str(ras[n])
-#                                     o_df['DEC'][s]=str(decs[n])
-#                             d_flag=True
-#                         else:
-#                             #add the current visibility array to the master list
-#                             v_df.loc[len(v_df.index)] = v_ar
-#                             # vis_df.loc[len(vis_df)] = v_ar
-#                     else:
-#                         # break
-#                         continue
+                        v_arr=np.asarray(v_df)
+                        overlap=np.where([np.all((v_arr+np.asarray(v_ar, dtype=bool))[i]) for i in range(len(v_arr))])[0]
+                        if len(overlap) > 0:
+                            #at least one entry has visibility that covers the total time along with the current target
+                            #take both and enter them in o_df in their respective times, prefering the closer one
+                            m=overlap[0]
+                            v1=v_arr[m]
+                            for s in range(len(starts)):
+                                if v1[s]:
+                                    o_df['Target'][s]=v_names[m]
+                                    o_df['RA'][s]=str(ras[m])
+                                    o_df['DEC'][s]=str(decs[m])
+                                else:
+                                    o_df['Target'][s]=v_names[n]
+                                    o_df['RA'][s]=str(ras[n])
+                                    o_df['DEC'][s]=str(decs[n])
+                            d_flag=True
+                        else:
+                            #add the current visibility array to the master list
+                            v_df.loc[len(v_df.index)] = v_ar
+                            # vis_df.loc[len(vis_df)] = v_ar
+                    else:
+                        # break
+                        continue
                 
-#                 else:
-#                     #If we made it here, the target is visible for the entire occultation time
-#                     #since the list is already sorted, break and use this one!
-#                     #add to the list of visible targets (not necessary, but keeps functionality with prev code)
-#                     o_df['Target'][:]=v_names[n]
-#                     o_df['RA'][:]=str(ras[n])
-#                     o_df['DEC'][:]=str(decs[n])
-#                     d_flag=True
-#                     # print(st_name, ': ', n, v_names[n], v_names[n], 'Occ target visible ALL')
-#                     break
-#                     # THIS BREAK DOESNT SEEM TO WORK!!!! REPLACE WITH return o_df, d_flag
-#                     # return o_df, d_flag
+                else:
+                    #If we made it here, the target is visible for the entire occultation time
+                    #since the list is already sorted, break and use this one!
+                    #add to the list of visible targets (not necessary, but keeps functionality with prev code)
+                    o_df['Target'][:]=v_names[n]
+                    o_df['RA'][:]=str(ras[n])
+                    o_df['DEC'][:]=str(decs[n])
+                    d_flag=True
+                    # print(st_name, ': ', n, v_names[n], v_names[n], 'Occ target visible ALL')
+                    break
+                    # THIS BREAK DOESNT SEEM TO WORK!!!! REPLACE WITH return o_df, d_flag
+                    # return o_df, d_flag
 
-#                 # print(f"{st_name}: {n} ({v_names[n]}) not 100% visible, try next on the list")
+                # print(f"{st_name}: {n} ({v_names[n]}) not 100% visible, try next on the list")
             
-#             #If a target(s) on the list don't have visibility data, ignore them!
-#             except FileNotFoundError:
-#                 continue    
+            #If a target(s) on the list don't have visibility data, ignore them!
+            except FileNotFoundError:
+                continue    
         
-#         #if there were not <=2 occultation targets that covered the time (cya clause)
-#         if not d_flag:
-#             #only if considering aux targets, real last ditch effort here
-#             if list_path.endswith('aux_list.csv'):# or st_name.startswith('Gaia'):
-#                 #check one last time to make sure there are no gaps
-#                 v_arr=np.asarray(v_df)
-#                 if np.all([np.any(v_arr[i]) for i in range(len(v_arr))]):
-#                     #iterate and set the nearest that is visible for each window as the occultation target
-#                     for m in range(len(v_arr)):
-#                         # VK START: IT LOOKS LIKE THE i IN v_arr[i] IS NOT PART OF THIS FOR LOOP. MAYBE A BUG?
-#                         #n=np.where(v_arr[i])[0][0]
-#                         # CHANGE i TO m
-#                         # VK END
-#                         n=np.where(v_arr[m])[0][0]
-#                         o_df['Target'][s]=v_names[n]
-#                         o_df['RA'][s]=str(ras[n])
-#                         o_df['DEC'][s]=str(decs[n])
-#                     d_flag=True
-#                     print('More than two auxiliary targets were needed to cover the occultation time.')
+        #if there were not <=2 occultation targets that covered the time (cya clause)
+        if not d_flag:
+            #only if considering aux targets, real last ditch effort here
+            if list_path.endswith('aux_list.csv'):# or st_name.startswith('Gaia'):
+                #check one last time to make sure there are no gaps
+                v_arr=np.asarray(v_df)
+                if np.all([np.any(v_arr[i]) for i in range(len(v_arr))]):
+                    #iterate and set the nearest that is visible for each window as the occultation target
+                    for m in range(len(v_arr)):
+                        # VK START: IT LOOKS LIKE THE i IN v_arr[i] IS NOT PART OF THIS FOR LOOP. MAYBE A BUG?
+                        #n=np.where(v_arr[i])[0][0]
+                        # CHANGE i TO m
+                        # VK END
+                        n=np.where(v_arr[m])[0][0]
+                        o_df['Target'][s]=v_names[n]
+                        o_df['RA'][s]=str(ras[n])
+                        o_df['DEC'][s]=str(decs[n])
+                    d_flag=True
+                    print('More than two auxiliary targets were needed to cover the occultation time.')
 
-#     return o_df, d_flag
+    return o_df, d_flag
 
 def update_coordinates_astropy(ra0, dec0, pm_ra, pm_dec):
-    import astropy.units as u
     from astropy.coordinates import SkyCoord
     from astropy.time import Time
+    import astropy.units as u
 
     t0 = Time('J2016.0')
     t1 = Time('2026-01-05')
@@ -1508,4 +1538,34 @@ def check_visibility():
 
     plt.subplots_adjust(hspace=0.1) 
     plt.show()
+
+def round_to_nearest_second(timestamp: datetime) -> datetime:
+    """Return ``timestamp`` rounded to the nearest second."""
+
+    if timestamp.microsecond >= 500_000:
+        return timestamp + timedelta(seconds=1) - timedelta(microseconds=timestamp.microsecond)
+    return timestamp - timedelta(microseconds=timestamp.microsecond)
+
+def remove_short_sequences(array: Sequence[float], sequence_too_short: int):
+    """Zero-out runs of ones shorter than ``sequence_too_short`` and report their spans."""
+
+    cleaned = np.asarray(array).copy()
+    start_index = None
+    positions: List[Tuple[int, int]] = []
+
+    for idx, value in enumerate(cleaned):
+        if value == 1 and start_index is None:
+            start_index = idx
+        elif value == 0 and start_index is not None:
+            if idx - start_index < sequence_too_short:
+                positions.append((start_index, idx - 1))
+            start_index = None
+
+    if start_index is not None and len(cleaned) - start_index < sequence_too_short:
+        positions.append((start_index, len(cleaned) - 1))
+
+    for start_idx, stop_idx in positions:
+        cleaned[start_idx : stop_idx + 1] = 0.0
+
+    return cleaned, positions
 
