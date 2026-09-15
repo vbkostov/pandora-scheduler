@@ -21,6 +21,47 @@ PACKAGEDIR = os.path.abspath(os.path.dirname(__file__))
 # print(PACKAGEDIR)
 # from . import PACKAGEDIR
 
+
+def _round_datetime_to_second(value):
+    """Round a datetime-like value to the nearest whole second."""
+    if value.microsecond >= 500000:
+        return value.replace(microsecond=0) + timedelta(seconds=1)
+    return value.replace(microsecond=0)
+
+
+def _merged_interval_overlap_fraction(target_start, target_stop, partner_intervals):
+    """Return the fraction of a target interval covered by partner intervals."""
+    target_start = pd.Timestamp(target_start)
+    target_stop = pd.Timestamp(target_stop)
+    target_duration = (target_stop - target_start).total_seconds()
+    if pd.isna(target_start) or pd.isna(target_stop) or target_duration <= 0:
+        return 0.0
+
+    clipped_intervals = []
+    for partner_start, partner_stop in partner_intervals:
+        partner_start = pd.Timestamp(partner_start)
+        partner_stop = pd.Timestamp(partner_stop)
+        overlap_start = max(target_start, partner_start)
+        overlap_stop = min(target_stop, partner_stop)
+        if overlap_start < overlap_stop:
+            clipped_intervals.append((overlap_start, overlap_stop))
+
+    if not clipped_intervals:
+        return 0.0
+
+    clipped_intervals.sort(key=lambda interval: interval[0])
+    merged_start, merged_stop = clipped_intervals[0]
+    covered_seconds = 0.0
+    for interval_start, interval_stop in clipped_intervals[1:]:
+        if interval_start <= merged_stop:
+            merged_stop = max(merged_stop, interval_stop)
+        else:
+            covered_seconds += (merged_stop - merged_start).total_seconds()
+            merged_start, merged_stop = interval_start, interval_stop
+    covered_seconds += (merged_stop - merged_start).total_seconds()
+
+    return min(covered_seconds / target_duration, 1.0)
+
 def star_vis(sun_block:float, moon_block:float, earth_block:float, 
                obs_start:str, obs_stop:str, 
                gmat_file:str,# = 'GMAT_pandora_450_20230713.csv',
@@ -61,6 +102,7 @@ def star_vis(sun_block:float, moon_block:float, earth_block:float,
     dt_iso_utc = pd.date_range(obs_start, obs_stop, freq='min')
     t_jd_utc   = Time(dt_iso_utc.to_julian_date(), format='jd', scale='utc').value
     t_mjd_utc  = Time(t_jd_utc-2400000.5, format='mjd', scale='utc').value
+    datetime_utc = Time(t_mjd_utc, format='mjd', scale='utc').to_datetime()
 
 
     ### Read in GMAT results
@@ -219,10 +261,12 @@ def star_vis(sun_block:float, moon_block:float, earth_block:float,
         
         
         #Save results for each star to csv file
-        data = np.vstack((t_mjd_utc, saa_cross, all_req, Earth_sep, Moon_sep, Sun_sep))
-        data = data.T.reshape(-1,6)
-        vis_df = pd.DataFrame(data, columns = ['Time(MJD_UTC)', 'SAA_Crossing', \
-            'Visible','Earth_Sep','Moon_Sep','Sun_Sep'])
+        data = np.vstack((t_mjd_utc, datetime_utc, saa_cross, all_req, Earth_sep, Moon_sep, Sun_sep))
+        data = data.T.reshape(-1,7)
+        vis_df = pd.DataFrame(data, columns = ['Time(MJD_UTC)', 'Time_UTC', \
+            'SAA_Crossing', 'Visible','Earth_Sep','Moon_Sep','Sun_Sep'])
+
+        vis_df['Time_UTC'] = pd.to_datetime(vis_df['Time_UTC']).dt.round('s')
         
         # def custom_float_format(df):
         #     formatters = {}
@@ -340,6 +384,15 @@ def transit_timing(target_list:str, planet_name:str, star_name:str):
     start_transits = Start_transits.to_value('datetime')
     end_transits   = End_transits.to_value('datetime')
 
+    start_datetimes = [
+        _round_datetime_to_second(value)
+        for value in Start_transits.to_value('datetime')
+    ]
+    end_datetimes = [
+        _round_datetime_to_second(value)
+        for value in End_transits.to_value('datetime')
+    ]
+
     # Truncate everything after the minutes place
     for i in range(len(start_transits)):
         start_transits[i] = start_transits[i] - timedelta(seconds=start_transits[i].second,
@@ -375,9 +428,11 @@ def transit_timing(target_list:str, planet_name:str, star_name:str):
         os.makedirs(save_dir)
 
     ### Save transit data to Visibility file
-    transit_data = np.vstack((all_transits, Start_transits.value, End_transits.value, transit_coverage))
-    transit_data = transit_data.T.reshape(-1, 4)
-    transit_df = pd.DataFrame(transit_data, columns = ['Transits','Transit_Start','Transit_Stop','Transit_Coverage'])
+    transit_data = np.vstack((all_transits, Start_transits.value, End_transits.value,
+                              start_datetimes, end_datetimes, transit_coverage))
+    transit_data = transit_data.T.reshape(-1, 6)
+    transit_df = pd.DataFrame(transit_data, columns = ['Transits','Transit_Start',
+        'Transit_Stop','Transit_Start_UTC','Transit_Stop_UTC','Transit_Coverage'])
 
     output_file_name = 'Visibility for ' + planet_name + '.csv'
     transit_df.to_csv((save_dir + output_file_name), sep=',', index=False)
@@ -455,46 +510,31 @@ def Transit_overlap(target_list:str, partner_list:str, star_name:str):
             planet_data = pd.read_csv(f'{PACKAGEDIR}/data/targets/' + star_name + '/' + planet_name + '/' + 
                                         'Visibility for ' + planet_name + '.csv')
 
-            overlap = pd.DataFrame(0., index=np.arange(len(All_start_transits[planet_name].dropna())), columns=['Transit_Overlap'])
-
-            for m in range(len(All_start_transits.columns)):
-                if All_start_transits.columns[m] == planet_name:
-                    logging.info('Analyzing:', planet_name)
+            target_starts = All_start_transits[planet_name].dropna().tolist()
+            target_stops = All_end_transits[planet_name].dropna().tolist()
+            partner_intervals = []
+            for planet_partner in All_start_transits.columns:
+                if planet_partner == planet_name:
                     continue
-                else:
-                    planet_partner = All_start_transits.columns[m]
-                    logging.info('Checking ', planet_name, ' against: ', planet_partner)
-                
-                for n in range(len(All_start_transits[planet_name].dropna())):
+                logging.info('Checking %s against %s', planet_name, planet_partner)
+                partner_starts = All_start_transits[planet_partner].dropna().tolist()
+                partner_stops = All_end_transits[planet_partner].dropna().tolist()
+                partner_intervals.extend(zip(partner_starts, partner_stops))
 
-                    for p in range(len(All_start_transits[planet_partner].dropna())):
-                        if (All_start_transits[planet_partner][p] < All_start_transits[planet_name][n] and
-                            All_end_transits[planet_partner][p] < All_start_transits[planet_name][n]) or \
-                            (All_start_transits[planet_partner][p] > All_end_transits[planet_name][n] and
-                            All_end_transits[planet_partner][p] > All_end_transits[planet_name][n]):
-                            continue
-                        else:
-                            partner_rng = pd.date_range(All_start_transits[planet_partner][p],
-                                                All_end_transits[planet_partner][p], freq='min')
-                            partner_rng = partner_rng.to_pydatetime()
-
-                            transit_rng = pd.date_range(All_start_transits[planet_name][n], 
-                                                All_end_transits[planet_name][n], freq='min')
-                            transit_rng = transit_rng.to_pydatetime()
-
-                            pset = set(partner_rng)
-                            tset = set(transit_rng)
-                            overlap_times = pset.intersection(tset)
-                            transit_overlap = len(overlap_times)/len(transit_rng)
-                            current_overlap = overlap.loc[n, 'Transit_Overlap']
-                            new_overlap = np.min((transit_overlap, 1.0))
-                            overlap.loc[n, 'Transit_Overlap'] = np.max((current_overlap, new_overlap))
+            overlap = pd.DataFrame({
+                'Transit_Overlap': [
+                    _merged_interval_overlap_fraction(target_start, target_stop, partner_intervals)
+                    for target_start, target_stop in zip(target_starts, target_stops)
+                ]
+            })
                        
     ###         Update pandas dataframe and save csv
-            if 'Transit_Overlap' in planet_data:
-                planet_data.update(overlap)
-            else:
-                planet_data = pd.concat([planet_data, overlap], axis=1)
+            if len(planet_data) != len(overlap):
+                raise ValueError(
+                    f'Planet visibility row count mismatch for {planet_name}: '
+                    f'{len(planet_data)} rows in CSV, {len(overlap)} transit intervals'
+                )
+            planet_data['Transit_Overlap'] = overlap['Transit_Overlap'].to_numpy()
             save_dir   = f'{PACKAGEDIR}/data/targets/' + star_name + '/' + planet_name + '/'
             save_fname = 'Visibility for ' + planet_name + '.csv'
             planet_data.to_csv((save_dir + save_fname), sep=',', index=False)
