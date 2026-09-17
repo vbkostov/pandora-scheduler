@@ -2383,12 +2383,12 @@ class ScheduleVisualizer:
         show_sequence_labels=False,
         title="Schedule by Priority — Visibility Overlay",
     ):
-        """Gantt chart colored by priority with non-visible minutes
+        """Gantt chart colored by priority with ST-gap minutes
         overlaid in red.
 
         Queries the scheduler's ``Visibility`` object per-sequence to
         compute minute-by-minute visibility and draws red blocks over
-        any minutes that fail a keepout constraint.
+        any minutes represented by the ST-gap mask.
 
         Parameters
         ----------
@@ -2501,7 +2501,7 @@ class ScheduleVisualizer:
         # Track x-extent for axis limits
         x_min = float("inf")
         x_max = float("-inf")
-        non_vis_total = 0
+        st_gap_bridged_total = 0
         total_mins = 0
         free_time_total = 0.0
 
@@ -2530,7 +2530,7 @@ class ScheduleVisualizer:
             )
             ax.add_patch(rect)
 
-            # Red overlay for non-visible minutes
+            # Overlay minutes represented by the ST-gap mask.
             n_mins = len(vis_arr)
             total_mins += n_mins
             if n_mins > 0 and not np.all(vis_arr):
@@ -2552,7 +2552,7 @@ class ScheduleVisualizer:
                                 alpha=1.00, linewidth=0, zorder=1000
                             )
                             ax.add_patch(r)
-                            non_vis_total += i - block_start
+                            st_gap_bridged_total += i - block_start
                             in_block = False
 
             if show_sequence_labels:
@@ -2575,13 +2575,13 @@ class ScheduleVisualizer:
         self._format_time_axis_safe(ax, calendar)
 
         vis_pct = (
-            100.0 * (total_mins - non_vis_total) / total_mins
+            100.0 * (total_mins - st_gap_bridged_total) / total_mins
             if total_mins > 0
             else 100.0
         )
         ax.set_title(
             f"{title}\n"
-            f"(total min: {total_mins}; non-visible min: {non_vis_total}; "
+            f"(total min: {total_mins}; ST_gap_bridged min: {st_gap_bridged_total}; "
             f"Free Time: {free_time_total:.1f} min)",
             fontsize=12, pad=10,
         )
@@ -2590,7 +2590,7 @@ class ScheduleVisualizer:
 
         # Legend
         legend_items = [
-            Patch(facecolor="red", alpha=0.75, label="Non-visible"),
+            Patch(facecolor="red", alpha=0.75, label="ST_gap_bridged"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
         used_priorities = sorted(
@@ -2732,7 +2732,7 @@ class ScheduleVisualizer:
 
         x_min = float("inf")
         x_max = float("-inf")
-        non_vis_total = 0
+        st_gap_bridged_total = 0
         total_mins = 0
         free_time_total = 0.0
 
@@ -2790,7 +2790,7 @@ class ScheduleVisualizer:
                                 zorder=1000,
                             )
                         )
-                        non_vis_total += i - block_start
+                        st_gap_bridged_total += i - block_start
                         in_block = False
 
             if show_sequence_labels:
@@ -2807,7 +2807,7 @@ class ScheduleVisualizer:
         self._format_time_axis_safe(ax, calendar)
 
         vis_pct = (
-            100.0 * (total_mins - non_vis_total) / total_mins
+            100.0 * (total_mins - st_gap_bridged_total) / total_mins
             if total_mins > 0
             else 100.0
         )
@@ -2816,7 +2816,7 @@ class ScheduleVisualizer:
             title_suffix = f"\n{len(missing_targets)} target(s) missing visibility parquet"
         ax.set_title(
             f"{title}\n"
-            f"(total min: {total_mins}; non-visible min: {non_vis_total}; "
+            f"(total min: {total_mins}; ST_gap_bridged min: {st_gap_bridged_total}; "
             f"Free Time: {free_time_total:.1f} min)"
             f"{title_suffix}",
             fontsize=12,
@@ -2828,7 +2828,7 @@ class ScheduleVisualizer:
         from matplotlib.patches import Patch
 
         legend_items = [
-            Patch(facecolor="black", alpha=1.0, label="Non-visible"),
+            Patch(facecolor="black", alpha=1.0, label="ST_gap_bridged"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
         used_priorities = sorted(set(s.priority for _, s, _ in rows if s.target != "Free Time"))

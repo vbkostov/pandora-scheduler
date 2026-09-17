@@ -30,7 +30,12 @@ except ImportError:
             "falling back to local compatibility shims. This usually means the "
             "checkout is mixed across commits or branches."
         )
-        return "_soft_ST" if getattr(config, "allow_science_soft_startracker_tail", False) else ""
+        suffixes = []
+        if getattr(config, "allow_science_soft_startracker_tail", False):
+            suffixes.append("soft_ST")
+        if getattr(config, "allow_science_startracker_gap_fill", False):
+            suffixes.append("ST_gap")
+        return "_" + "_".join(suffixes) if suffixes else ""
 
     def apply_output_suffix(path: Path, suffix: str) -> Path:
         if not suffix:

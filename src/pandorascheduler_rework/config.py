@@ -319,6 +319,18 @@ class PandoraSchedulerConfig:
     science_soft_startracker_tail_minutes: int = 10
     """Maximum tail length, in minutes, for soft-ST science extension."""
 
+    allow_science_startracker_gap_fill: bool = False
+    """Allow short science gaps caused only by star-tracker constraints.
+
+    When enabled, the science-calendar builder may mark a non-visible gap as
+    science-visible when the gap is no longer than
+    ``science_startracker_gap_max_minutes`` and the target still passes the
+    Sun, Moon, and Earth boresight constraints throughout the gap.
+    """
+
+    science_startracker_gap_max_minutes: int = 10
+    """Maximum gap length, in minutes, eligible for star-tracker gap filling."""
+
     priority_buffer: bool = False
     """Expand transit-priority XML tagging beyond the nominal transit window."""
 
@@ -586,6 +598,10 @@ class PandoraSchedulerConfig:
                 self.science_soft_startracker_tail_minutes,
             ),
             (
+                "science_startracker_gap_max_minutes",
+                self.science_startracker_gap_max_minutes,
+            ),
+            (
                 "priority_buffer_minutes",
                 self.priority_buffer_minutes,
             ),
@@ -746,7 +762,12 @@ def resolve_data_subdir(
 
 def output_filename_suffix(config: PandoraSchedulerConfig) -> str:
     """Return a stable output suffix for feature-tagged runs."""
-    return "_soft_ST" if config.allow_science_soft_startracker_tail else ""
+    suffixes = []
+    if config.allow_science_soft_startracker_tail:
+        suffixes.append("soft_ST")
+    if config.allow_science_startracker_gap_fill:
+        suffixes.append("ST_gap")
+    return "_" + "_".join(suffixes) if suffixes else ""
 
 
 def apply_output_suffix(path: Path, suffix: str) -> Path:

@@ -9,7 +9,7 @@
   ],
 
   "visibility_backend": "local",
-  "visibility_tle_file": "/home/pluto/Documents/GitHub/pandora-scheduler/tle/tle_test.tle",
+  "visibility_tle_file": "/Users/vkostov/Documents/GitHub/pandora-scheduler/tle/tle_test.tle",
 
   "notes": {
     "visibility_backend": "local == visibility from GMAT; pandoravisibility == visibility from pandora-visibility"
@@ -31,12 +31,15 @@
   "roll_step_deg": 5.0,
   "min_power_frac": 0.7,
 
-  "allow_science_soft_startracker_tail": false,
-  "science_soft_startracker_tail_minutes": 10,
+  "allow_science_startracker_gap_fill": true,
+  "science_startracker_gap_max_minutes": 15,
 
-  "science_soft_st_sun_min_deg": 34,
-  "science_soft_st_moon_min_deg": 10,
-  "science_soft_st_earthlimb_min_deg": 20,
+  "allow_science_soft_startracker_tail": false,
+  "science_soft_startracker_tail_minutes": 15,
+
+  "science_soft_st_sun_min_deg": null,
+  "science_soft_st_moon_min_deg": null,
+  "science_soft_st_earthlimb_min_deg": null,
   "science_soft_st1_earthlimb_min_deg": null,
   "science_soft_st2_earthlimb_min_deg": null,
   "science_soft_st_required": 1,
@@ -55,8 +58,8 @@
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
-  "generate_xml": false,
-  "include_occultation_sequences_in_xml": true,
+  "generate_xml": true,
+  "include_occultation_sequences_in_xml": false,
   "allow_partial_occultation_sequences_in_xml": false,
 
   "obs_sequence_duration_min": 90,
@@ -84,7 +87,7 @@
   "xml_data_dir": null,
 
   "extra_inputs": {
-    "target_definition_base": "/home/pluto/Documents/GitHub/PandoraTargetList/target_definition_files/",
+    "target_definition_base": "/Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/",
     "target_definition_files": [
       "exoplanet",
       "auxiliary-standard",
@@ -95,9 +98,9 @@
     "skip_manifests": false,
     "generate_visibility": true,
 
-    "visibility_gmat": "/home/pluto/Documents/GitHub/pandora-scheduler/gmat/PAN-GMAT-COM-20260825-VF20260825-EX20270925.txt",
+    "visibility_gmat": "/Users/vkostov/Documents/GitHub/pandora-scheduler/gmat/PAN-GMAT-COM-20260825-VF20260825-EX20270925.txt",
     "write_all_targets_csv": false,
-    "too_list_csv": "/home/pluto/Documents/GitHub/pandora-scheduler/output_20260907_20270406_EarthDay110/ToO_list.csv"
+    "too_list_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20260928_20261012_EarthDay110/ToO_list.csv"
   },
   "primary_visit_start_policy": "centered",
   "notes": {

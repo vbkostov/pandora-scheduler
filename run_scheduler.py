@@ -73,7 +73,12 @@ except ImportError:
             "falling back to local compatibility shims. This usually means the "
             "checkout is mixed across commits or branches."
         )
-        return "_soft_ST" if getattr(config, "allow_science_soft_startracker_tail", False) else ""
+        suffixes = []
+        if getattr(config, "allow_science_soft_startracker_tail", False):
+            suffixes.append("soft_ST")
+        if getattr(config, "allow_science_startracker_gap_fill", False):
+            suffixes.append("ST_gap")
+        return "_" + "_".join(suffixes) if suffixes else ""
 
     def apply_output_suffix(path: Path, suffix: str) -> Path:
         if not suffix:
@@ -1197,6 +1202,13 @@ def main() -> int:
         science_soft_startracker_tail_minutes = int(
             _get_val("science_soft_startracker_tail_minutes", None, 10)
         )
+        allow_science_startracker_gap_fill = _as_bool(
+            _get_val("allow_science_startracker_gap_fill", None, False),
+            False,
+        )
+        science_startracker_gap_max_minutes = int(
+            _get_val("science_startracker_gap_max_minutes", None, 10)
+        )
         priority_buffer = _as_bool(
             _get_any(["priority_buffer", "buffer"], None, False),
             False,
@@ -1430,6 +1442,8 @@ def main() -> int:
             occultation_nonvisible_tolerance_minutes=occultation_nonvisible_tolerance_minutes,
             allow_science_soft_startracker_tail=allow_science_soft_startracker_tail,
             science_soft_startracker_tail_minutes=science_soft_startracker_tail_minutes,
+            allow_science_startracker_gap_fill=allow_science_startracker_gap_fill,
+            science_startracker_gap_max_minutes=science_startracker_gap_max_minutes,
             priority_buffer=priority_buffer,
             priority_buffer_mode=priority_buffer_mode,
             priority_buffer_minutes=priority_buffer_minutes,

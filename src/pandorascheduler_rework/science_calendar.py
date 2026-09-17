@@ -193,6 +193,8 @@ class _ScienceCalendarBuilder:
         non_visible_minutes: float = float("nan"),
         science_soft_tail_used: bool = False,
         science_soft_tail_minutes: float = 0.0,
+        science_st_gap_fill_used: bool = False,
+        science_st_gap_fill_minutes: float = 0.0,
     ) -> None:
         self.sequence_provenance.append(
             {
@@ -211,6 +213,8 @@ class _ScienceCalendarBuilder:
                 "non_visible_minutes": non_visible_minutes,
                 "science_soft_tail_used": bool(science_soft_tail_used),
                 "science_soft_tail_minutes": float(science_soft_tail_minutes),
+                "science_st_gap_fill_used": bool(science_st_gap_fill_used),
+                "science_st_gap_fill_minutes": float(science_st_gap_fill_minutes),
             }
         )
 
@@ -224,6 +228,11 @@ class _ScienceCalendarBuilder:
         if not self.config.allow_science_soft_startracker_tail:
             df = df.drop(
                 columns=["science_soft_tail_used", "science_soft_tail_minutes"],
+                errors="ignore",
+            )
+        if not self.config.allow_science_startracker_gap_fill:
+            df = df.drop(
+                columns=["science_st_gap_fill_used", "science_st_gap_fill_minutes"],
                 errors="ignore",
             )
         df.to_csv(output_path, index=False)
@@ -893,6 +902,18 @@ class _ScienceCalendarBuilder:
             ),
         )
 
+    def _science_boresight_only_config(self) -> PandoraSchedulerConfig:
+        """Return a config that enforces boresight constraints but not ST constraints."""
+        return replace(
+            self.config,
+            st_sun_min_deg=0.0,
+            st_moon_min_deg=0.0,
+            st_earthlimb_min_deg=0.0,
+            st1_earthlimb_min_deg=None,
+            st2_earthlimb_min_deg=None,
+            st_required=0,
+        )
+
     def _get_science_soft_payload(self) -> Optional[dict[str, object]]:
         """Load the shared GMAT geometry payload used for soft-ST tail checks."""
         if self._science_soft_payload is not None:
@@ -943,42 +964,51 @@ class _ScienceCalendarBuilder:
             projected = [slice(0, stop_idx - start_idx)]
         return projected
 
-    def _soft_science_extension_stop(
+    def _science_interval_visibility(
         self,
         ra_deg: float,
         dec_deg: float,
-        tail_start: datetime,
-        tail_stop: datetime,
-    ) -> datetime:
-        """Return the furthest extension stop that passes the softened ST check."""
-        if tail_stop <= tail_start:
-            return tail_start
+        interval_start: datetime,
+        interval_stop: datetime,
+        visibility_config: PandoraSchedulerConfig,
+    ) -> Optional[np.ndarray]:
+        """Evaluate one interval using the supplied visibility constraints."""
+        if interval_stop <= interval_start:
+            return np.zeros(0, dtype=bool)
+
         payload = self._get_science_soft_payload()
         if payload is None:
-            return tail_start
+            return None
 
         times = np.asarray(payload["Time_UTC"], dtype="datetime64[ns]")
-        start_dt64 = np.datetime64(tail_start)
-        stop_dt64 = np.datetime64(tail_stop)
+        start_dt64 = np.datetime64(interval_start)
+        stop_dt64 = np.datetime64(interval_stop)
         mask = (times >= start_dt64) & (times < stop_dt64)
         if not bool(mask.any()):
-            return tail_start
+            return np.zeros(0, dtype=bool)
 
         window_indices = np.flatnonzero(mask)
         start_idx = int(window_indices[0])
         stop_idx = int(window_indices[-1]) + 1
 
-        star_coord = SkyCoord(ra=float(ra_deg) * u.deg, dec=float(dec_deg) * u.deg, frame="icrs")
+        star_coord = SkyCoord(
+            ra=float(ra_deg) * u.deg,
+            dec=float(dec_deg) * u.deg,
+            frame="icrs",
+        )
         earth_center_sep_deg = payload["earth_pc"][start_idx:stop_idx].separation(
             star_coord
         ).deg
 
         tgt_cart = star_coord.icrs.cartesian
-        tgt_unit_1 = np.array([tgt_cart.x.value, tgt_cart.y.value, tgt_cart.z.value])
-        tgt_unit_1 = tgt_unit_1 / np.linalg.norm(tgt_unit_1)
-        target_unit = np.broadcast_to(tgt_unit_1, (stop_idx - start_idx, 3)).copy()
+        target_unit_1 = np.array(
+            [tgt_cart.x.value, tgt_cart.y.value, tgt_cart.z.value]
+        )
+        target_unit_1 = target_unit_1 / np.linalg.norm(target_unit_1)
+        target_unit = np.broadcast_to(
+            target_unit_1, (stop_idx - start_idx, 3)
+        ).copy()
 
-        soft_config = self._science_soft_st_config()
         results = compute_visibility_with_constraints(
             target_unit=target_unit,
             nadir_unit=payload["nadir_unit"][start_idx:stop_idx],
@@ -991,9 +1021,29 @@ class _ScienceCalendarBuilder:
                 payload["orbit_slices"], start_idx, stop_idx
             ),
             earth_center_sep_deg=earth_center_sep_deg,
-            config=soft_config,
+            config=visibility_config,
         )
-        visible = np.asarray(results["visible"], dtype=bool)
+        return np.asarray(results["visible"], dtype=bool)
+
+    def _soft_science_extension_stop(
+        self,
+        ra_deg: float,
+        dec_deg: float,
+        tail_start: datetime,
+        tail_stop: datetime,
+    ) -> datetime:
+        """Return the furthest extension stop that passes the softened ST check."""
+        if tail_stop <= tail_start:
+            return tail_start
+        visible = self._science_interval_visibility(
+            ra_deg,
+            dec_deg,
+            tail_start,
+            tail_stop,
+            self._science_soft_st_config(),
+        )
+        if visible is None:
+            return tail_start
         if visible.size == 0 or not bool(visible[0]):
             return tail_start
 
@@ -1003,6 +1053,42 @@ class _ScienceCalendarBuilder:
                 break
             consecutive += 1
         return tail_start + timedelta(minutes=consecutive)
+
+    def _fill_science_segments_with_startracker_gaps(
+        self,
+        segments: Sequence[Tuple[datetime, datetime, bool]],
+        ra_deg: float,
+        dec_deg: float,
+    ) -> tuple[List[Tuple[datetime, datetime, bool]], List[tuple[datetime, datetime]]]:
+        """Mark short boresight-visible, ST-only gaps as science-visible."""
+        if not self.config.allow_science_startracker_gap_fill:
+            return list(segments), []
+
+        max_gap = timedelta(minutes=self.config.science_startracker_gap_max_minutes)
+        if max_gap <= timedelta(0):
+            return list(segments), []
+
+        adjusted = list(segments)
+        filled_gaps: List[tuple[datetime, datetime]] = []
+        boresight_config = self._science_boresight_only_config()
+        for idx, (seg_start, seg_stop, is_visible) in enumerate(adjusted):
+            if is_visible or seg_stop - seg_start > max_gap:
+                continue
+
+            visible = self._science_interval_visibility(
+                ra_deg,
+                dec_deg,
+                seg_start,
+                seg_stop,
+                boresight_config,
+            )
+            if visible is None or visible.size == 0 or not bool(visible.all()):
+                continue
+
+            adjusted[idx] = (seg_start, seg_stop, True)
+            filled_gaps.append((seg_start, seg_stop))
+
+        return self._coalesce_segments(adjusted), filled_gaps
 
     def _extend_science_segments_with_soft_st_tail(
         self,
@@ -1269,6 +1355,7 @@ class _ScienceCalendarBuilder:
         adjacent_priority_sequences: Optional[
             set[tuple[datetime, datetime]]
         ] = None,
+        science_st_gap_windows: Sequence[tuple[datetime, datetime]] = (),
     ) -> int:
         """Emit chunked science observation sequences.  Returns updated
         *seq_counter*."""
@@ -1361,6 +1448,15 @@ class _ScienceCalendarBuilder:
                         )
                         science_soft_tail_used = True
                         science_soft_tail_minutes = float(capped_minutes)
+                science_st_gap_fill_minutes = 0.0
+                for gap_start, gap_stop in science_st_gap_windows:
+                    overlap_start = max(current, gap_start)
+                    overlap_stop = min(next_value, gap_stop)
+                    if overlap_stop > overlap_start:
+                        science_st_gap_fill_minutes += (
+                            overlap_stop - overlap_start
+                        ).total_seconds() / 60.0
+                science_st_gap_fill_used = science_st_gap_fill_minutes > 0.0
                 self._record_sequence_provenance(
                     visit_id,
                     sequence_id,
@@ -1375,6 +1471,8 @@ class _ScienceCalendarBuilder:
                     non_visible_minutes=science_non_visible_minutes,
                     science_soft_tail_used=science_soft_tail_used,
                     science_soft_tail_minutes=science_soft_tail_minutes,
+                    science_st_gap_fill_used=science_st_gap_fill_used,
+                    science_st_gap_fill_minutes=science_st_gap_fill_minutes,
                 )
                 seq_counter += 1
                 current = next_value
@@ -2326,6 +2424,11 @@ class _ScienceCalendarBuilder:
             start,
             final_time,
         )
+        raw_segments, science_st_gap_windows = self._fill_science_segments_with_startracker_gaps(
+            raw_segments,
+            ra_value,
+            dec_value,
+        )
         raw_segments, science_soft_tail_windows = self._extend_science_segments_with_soft_st_tail(
             raw_segments,
             ra_value,
@@ -2354,6 +2457,7 @@ class _ScienceCalendarBuilder:
                         seg_start, seg_stop, ra_value, dec_value,
                         target_info, visibility_df, priority_flag, transit_start, transit_stop,
                         soft_tail_window=science_soft_tail_windows.get(seg_start),
+                        science_st_gap_windows=science_st_gap_windows,
                         adjacent_priority_sequences=adjacent_priority_sequences,
                     )
             return
@@ -2374,6 +2478,7 @@ class _ScienceCalendarBuilder:
                         seg_start, seg_stop, ra_value, dec_value,
                         target_info, visibility_df, priority_flag, transit_start, transit_stop,
                         soft_tail_window=science_soft_tail_windows.get(seg_start),
+                        science_st_gap_windows=science_st_gap_windows,
                         adjacent_priority_sequences=adjacent_priority_sequences,
                     )
             return
@@ -2470,6 +2575,7 @@ class _ScienceCalendarBuilder:
                         seg_start, seg_stop, ra_value, dec_value,
                         target_info, visibility_df, priority_flag, transit_start, transit_stop,
                         soft_tail_window=science_soft_tail_windows.get(seg_start),
+                        science_st_gap_windows=science_st_gap_windows,
                         adjacent_priority_sequences=adjacent_priority_sequences,
                     )
                 else:
@@ -2565,9 +2671,10 @@ class _ScienceCalendarBuilder:
                 seq_counter = self._emit_science_sequences(
                     visit_element, visit_id, seq_counter, target_name,
                     seg_start, seg_stop, ra_value, dec_value,
-                    target_info, visibility_df, priority_flag, transit_start, transit_stop,
-                    soft_tail_window=science_soft_tail_windows.get(seg_start),
-                    adjacent_priority_sequences=adjacent_priority_sequences,
+                        target_info, visibility_df, priority_flag, transit_start, transit_stop,
+                        soft_tail_window=science_soft_tail_windows.get(seg_start),
+                        science_st_gap_windows=science_st_gap_windows,
+                        adjacent_priority_sequences=adjacent_priority_sequences,
                 )
                 continue
 
