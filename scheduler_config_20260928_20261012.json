@@ -31,7 +31,7 @@
   "roll_step_deg": 5.0,
   "min_power_frac": 0.7,
 
-  "allow_science_startracker_gap_fill": true,
+  "allow_science_startracker_gap_fill": false,
   "science_startracker_gap_max_minutes": 15,
 
   "allow_science_soft_startracker_tail": false,
