@@ -2631,26 +2631,56 @@ class ScheduleVisualizer:
             except Exception:
                 pass
 
-        visibility_cache: dict[str, Optional[pd.DataFrame]] = {}
+        provenance_by_sequence: dict[tuple[str, str], dict[str, str]] = {}
+        provenance_path = data_dir.parent / "Pandora_science_calendar_sequence_provenance.csv"
+        if provenance_path.exists():
+            try:
+                provenance_df = pd.read_csv(
+                    provenance_path,
+                    dtype={"visit_id": str, "sequence_id": str},
+                )
+                for _, provenance_row in provenance_df.iterrows():
+                    visit_id = str(provenance_row.get("visit_id", "")).strip()
+                    sequence_id = str(provenance_row.get("sequence_id", "")).strip()
+                    if visit_id and sequence_id:
+                        provenance_by_sequence[(visit_id, sequence_id)] = {
+                            key: str(value).strip()
+                            for key, value in provenance_row.items()
+                        }
+            except Exception:
+                provenance_by_sequence = {}
 
-        def _load_visibility(target_name: str) -> Optional[pd.DataFrame]:
+        visibility_cache: dict[tuple[str, str], Optional[pd.DataFrame]] = {}
+
+        def _load_visibility(
+            target_name: str,
+            sequence_type: str = "",
+        ) -> Optional[pd.DataFrame]:
             if target_name == "Free Time":
                 return None
-            if target_name in visibility_cache:
-                return visibility_cache[target_name]
-
-            candidates = [
-                data_dir / "targets" / target_name / f"Visibility for {target_name}.parquet",
-                data_dir / "aux_targets" / target_name / f"Visibility for {target_name}.parquet",
-            ]
             star_name = planet_to_star.get(target_name)
-            if star_name:
-                candidates.extend(
-                    [
-                        data_dir / "targets" / star_name / f"Visibility for {star_name}.parquet",
-                        data_dir / "aux_targets" / star_name / f"Visibility for {star_name}.parquet",
-                    ]
-                )
+            cache_key = (target_name, sequence_type)
+            if cache_key in visibility_cache:
+                return visibility_cache[cache_key]
+
+            # A star can exist in both catalogs. Prefer the catalog that
+            # produced this sequence instead of whichever file is found first.
+            prefer_aux = sequence_type == "occultation" or (
+                sequence_type != "science" and target_name not in planet_to_star
+            )
+            roots = (
+                ("aux_targets", "targets")
+                if prefer_aux
+                else ("targets", "aux_targets")
+            )
+            names = [target_name]
+            if star_name and star_name not in names:
+                names.append(star_name)
+            candidates = [
+                data_dir / root / name / f"Visibility for {name}.parquet"
+                for root in roots
+                for name in names
+            ]
 
             for candidate in candidates:
                 if candidate.exists():
@@ -2682,10 +2712,10 @@ class ScheduleVisualizer:
                         index=index,
                     )
                     prepared = prepared.groupby(level=0)["Visible"].max().to_frame()
-                    visibility_cache[target_name] = prepared
+                    visibility_cache[cache_key] = prepared
                     return prepared
 
-            visibility_cache[target_name] = None
+            visibility_cache[cache_key] = None
             return None
 
         rows = []
@@ -2698,7 +2728,12 @@ class ScheduleVisualizer:
                 n_mins = int(np.rint(seq.duration.sec / 60.0))
                 if n_mins <= 0:
                     continue
-                visibility_df = _load_visibility(seq.target)
+                provenance = provenance_by_sequence.get(
+                    (str(visit.id), str(seq.id)),
+                    {},
+                )
+                sequence_type = provenance.get("sequence_type", "").lower()
+                visibility_df = _load_visibility(seq.target, sequence_type)
                 if visibility_df is None:
                     if seq.target == "Free Time":
                         vis_arr = np.ones(n_mins, dtype=bool)
@@ -2716,7 +2751,15 @@ class ScheduleVisualizer:
                         .reindex(expected, fill_value=False)
                         .to_numpy(dtype=bool)
                     )
-                rows.append((visit.id, seq, vis_arr))
+                try:
+                    st_gap_minutes = float(
+                        provenance.get("science_st_gap_fill_minutes", "0")
+                    )
+                    if not np.isfinite(st_gap_minutes):
+                        st_gap_minutes = 0.0
+                except (TypeError, ValueError):
+                    st_gap_minutes = 0.0
+                rows.append((visit.id, seq, vis_arr, st_gap_minutes))
 
         if not rows:
             ax.text(0.5, 0.5, "No sequences", ha="center", transform=ax.transAxes)
@@ -2724,7 +2767,7 @@ class ScheduleVisualizer:
 
         seen = {}
         y_labels = []
-        for vid, seq, _ in rows:
+        for vid, seq, _, _ in rows:
             key = (vid, seq.target)
             if key not in seen:
                 seen[key] = len(y_labels)
@@ -2732,11 +2775,12 @@ class ScheduleVisualizer:
 
         x_min = float("inf")
         x_max = float("-inf")
-        st_gap_bridged_total = 0
+        st_gap_bridged_total = 0.0
+        non_visible_total = 0
         total_mins = 0
         free_time_total = 0.0
 
-        for vid, seq, vis_arr in rows:
+        for vid, seq, vis_arr, st_gap_minutes in rows:
             y = seen[(vid, seq.target)]
             start_num = float(mdates.date2num(seq.start_time.datetime))
             stop_num = float(mdates.date2num(seq.stop_time.datetime))
@@ -2766,7 +2810,11 @@ class ScheduleVisualizer:
 
             n_mins = len(vis_arr)
             total_mins += n_mins
+            if seq.target != "Free Time":
+                non_visible_total += int((~vis_arr).sum())
+                st_gap_bridged_total += st_gap_minutes
             if n_mins > 0 and not np.all(vis_arr):
+                overlay_color = "black" if st_gap_minutes > 0 else "red"
                 min_dur = dur_days / n_mins
                 in_block = False
                 block_start = 0
@@ -2783,14 +2831,13 @@ class ScheduleVisualizer:
                                 (x0, y - 0.35),
                                 width,
                                 0.7,
-                                facecolor="black",
+                                facecolor=overlay_color,
                                 edgecolor="none",
                                 alpha=1.0,
                                 linewidth=0,
                                 zorder=1000,
                             )
                         )
-                        st_gap_bridged_total += i - block_start
                         in_block = False
 
             if show_sequence_labels:
@@ -2807,7 +2854,7 @@ class ScheduleVisualizer:
         self._format_time_axis_safe(ax, calendar)
 
         vis_pct = (
-            100.0 * (total_mins - st_gap_bridged_total) / total_mins
+            100.0 * (total_mins - non_visible_total) / total_mins
             if total_mins > 0
             else 100.0
         )
@@ -2816,7 +2863,8 @@ class ScheduleVisualizer:
             title_suffix = f"\n{len(missing_targets)} target(s) missing visibility parquet"
         ax.set_title(
             f"{title}\n"
-            f"(total min: {total_mins}; ST_gap_bridged min: {st_gap_bridged_total}; "
+            f"(total min: {total_mins}; ST_gap_bridged min: {st_gap_bridged_total:.0f}; "
+            f"non-visible min: {non_visible_total}; "
             f"Free Time: {free_time_total:.1f} min)"
             f"{title_suffix}",
             fontsize=12,
@@ -2829,9 +2877,12 @@ class ScheduleVisualizer:
 
         legend_items = [
             Patch(facecolor="black", alpha=1.0, label="ST_gap_bridged"),
+            Patch(facecolor="red", alpha=1.0, label="Non-visible"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
-        used_priorities = sorted(set(s.priority for _, s, _ in rows if s.target != "Free Time"))
+        used_priorities = sorted(
+            set(s.priority for _, s, _, _ in rows if s.target != "Free Time")
+        )
         for p in used_priorities:
             c = priority_colors.get(p, "silver")
             legend_items.append(Patch(facecolor=c, label=f"Priority {p}"))

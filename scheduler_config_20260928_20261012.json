@@ -31,8 +31,11 @@
   "roll_step_deg": 5.0,
   "min_power_frac": 0.7,
 
-  "allow_science_startracker_gap_fill": true,
+  "allow_science_startracker_gap_fill": false,
   "science_startracker_gap_max_minutes": 15,
+
+  "allow_occ_startracker_violation": true,
+  "occultation_nonvisible_tolerance_minutes": 3,
 
   "allow_science_soft_startracker_tail": false,
   "science_soft_startracker_tail_minutes": 15,
@@ -67,14 +70,12 @@
   "min_sequence_minutes": 5,
   "min_science_sequence_minutes": 8,
   "min_occultation_sequence_minutes": 8,
-  "occultation_nonvisible_tolerance_minutes": 3,
   "break_occultation_sequences": true,
 
   "only_occultation_pass1": true,
   "enable_occultation_pass1": false,
   "requested_occ_time_override": true,
 
-  "allow_occ_startracker_violation": true,
   "try_catalog_fallback": false,
 
   "run_visualizer_after_pipeline": true,
