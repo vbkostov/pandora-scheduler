@@ -31,7 +31,7 @@
   "roll_step_deg": 5.0,
   "min_power_frac": 0.7,
 
-  "allow_science_startracker_gap_fill": false,
+  "allow_science_startracker_gap_fill": true,
   "science_startracker_gap_max_minutes": 15,
 
   "allow_science_soft_startracker_tail": false,
@@ -54,12 +54,12 @@
 
   "exoplanet_only_mode": true,
 
-  "primary_only_mode": true,
+  "primary_only_mode": false,
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
   "generate_xml": true,
-  "include_occultation_sequences_in_xml": false,
+  "include_occultation_sequences_in_xml": true,
   "allow_partial_occultation_sequences_in_xml": false,
 
   "obs_sequence_duration_min": 90,
