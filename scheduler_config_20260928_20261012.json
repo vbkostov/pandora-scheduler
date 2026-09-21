@@ -34,6 +34,9 @@
   "allow_science_startracker_gap_fill": true,
   "science_startracker_gap_max_minutes": 15,
 
+  "allow_occ_startracker_violation": true,
+  "occultation_nonvisible_tolerance_minutes": 3,
+
   "allow_science_soft_startracker_tail": false,
   "science_soft_startracker_tail_minutes": 15,
 
@@ -54,12 +57,12 @@
 
   "exoplanet_only_mode": false,
 
-  "primary_only_mode": false,
+  "primary_only_mode": true,
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
   "generate_xml": true,
-  "include_occultation_sequences_in_xml": true,
+  "include_occultation_sequences_in_xml": false,
   "allow_partial_occultation_sequences_in_xml": false,
 
   "obs_sequence_duration_min": 90,
@@ -67,14 +70,12 @@
   "min_sequence_minutes": 5,
   "min_science_sequence_minutes": 8,
   "min_occultation_sequence_minutes": 8,
-  "occultation_nonvisible_tolerance_minutes": 3,
   "break_occultation_sequences": true,
 
   "only_occultation_pass1": true,
   "enable_occultation_pass1": false,
   "requested_occ_time_override": true,
 
-  "allow_occ_startracker_violation": true,
   "try_catalog_fallback": false,
 
   "run_visualizer_after_pipeline": true,
