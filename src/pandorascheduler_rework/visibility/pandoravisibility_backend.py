@@ -13,6 +13,8 @@ from astropy.time import Time
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
 
+from .constraints import effective_earth_threshold
+
 
 def earth_center_to_limb_threshold_deg(center_deg, limb_angle_rad):
     """Convert an Earth-center keepout to package apparent-limb clearance."""
@@ -176,6 +178,26 @@ class PandoraVisibilityBackend:
         visible &= ~finite_power | (power >= config.min_power_frac)
 
         earth_center_sep = payload["earth_pc"].separation(star_coord).deg
+        target_cart = star_coord.icrs.cartesian
+        target_unit_one = np.array(
+            [target_cart.x.value, target_cart.y.value, target_cart.z.value],
+            dtype=float,
+        )
+        target_unit_one /= np.linalg.norm(target_unit_one)
+        target_unit = np.broadcast_to(
+            target_unit_one, (len(payload["Time(MJD_UTC)"]), 3)
+        )
+        earth_threshold = effective_earth_threshold(
+            target_unit,
+            payload["nadir_unit"],
+            payload["sun_unit"],
+            config.earth_avoidance_day_deg,
+            config.earth_avoidance_night_deg,
+            config.earth_avoidance_deg,
+            limb_angle_rad=payload["limb_angle_rad"],
+            twilight_margin_deg=config.twilight_margin_deg,
+            daynight_mode=config.daynight_mode,
+        )
         return pd.DataFrame(
             {
                 "Time(MJD_UTC)": payload["Time(MJD_UTC)"],
@@ -183,6 +205,8 @@ class PandoraVisibilityBackend:
                 "SAA_Crossing": payload["SAA_Crossing"],
                 "Visible": np.round(visible.astype(float), 1),
                 "Earth_Sep": np.round(earth_center_sep, 3),
+                "Earth_Threshold": np.round(earth_threshold, 3),
+                "Solar_Power_Frac": np.round(power, 4),
                 "Moon_Sep": np.round(separations["moon"].to_value(u.deg), 3),
                 "Sun_Sep": np.round(separations["sun"].to_value(u.deg), 3),
                 "Roll_Deg": np.round(np.asarray(result["roll_deg"], dtype=float), 2),

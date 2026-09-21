@@ -430,6 +430,8 @@ def _build_star_visibility(
         "SAA_Crossing": payload["SAA_Crossing"],
         "Visible": np.round(visible, 1),
         "Earth_Sep": np.round(earth_center_sep_deg, 3),
+        "Earth_Threshold": np.round(results["earth_threshold"], 3),
+        "Solar_Power_Frac": np.round(results["power_frac"], 4),
         "Moon_Sep": np.round(results["moon_sep"], 3),
         "Sun_Sep": np.round(results["sun_sep"], 3),
         "Roll_Deg": np.round(results["roll_deg"], 2),

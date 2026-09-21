@@ -610,8 +610,10 @@ def find_best_roll_per_orbit(
             chosen_roll_deg = roll_angles[best_roll_idx]
             # Normalise to [-180, 180)
             chosen_roll_deg = ((chosen_roll_deg + 180) % 360) - 180
-            active = bvis & best_st_ok
-            roll_deg_out[orb_slice] = np.where(active, chosen_roll_deg, np.nan)
+            # Keep the selected roll for boresight-valid minutes even when
+            # star trackers fail. Downstream diagnostics need to distinguish
+            # ST failure from no acceptable roll/power solution.
+            roll_deg_out[orb_slice] = np.where(bvis, chosen_roll_deg, np.nan)
             st_visible_out[orb_slice] = best_st_ok
             power_frac_out[orb_slice] = best_pwr
 
@@ -659,6 +661,7 @@ def compute_visibility_with_constraints(
         ``visible`` : ndarray ``(N,)`` bool
         ``roll_deg`` : ndarray ``(N,)`` float (NaN where N/A)
         ``n_st_pass`` : ndarray ``(N,)`` int (0, 1, or 2)
+        ``power_frac`` : ndarray ``(N,)`` float
     """
     N = target_unit.shape[0]
 
@@ -688,9 +691,10 @@ def compute_visibility_with_constraints(
     # --  Phase B: Star tracker + roll sweep  --------------------------------
     roll_deg = np.full(N, np.nan)
     n_st_pass = np.zeros(N, dtype=int)
+    power_frac = np.zeros(N, dtype=float)
 
     if _st_thresholds_active(config):
-        roll_deg, st_visible, _power_frac = find_best_roll_per_orbit(
+        roll_deg, st_visible, power_frac = find_best_roll_per_orbit(
             target_unit,
             zenith_unit,
             sun_unit,
@@ -758,4 +762,6 @@ def compute_visibility_with_constraints(
         "sun_sep": sun_sep,
         "moon_sep": moon_sep,
         "earth_center_sep": earth_center_sep_deg,
+        "earth_threshold": np.asarray(earth_threshold),
+        "power_frac": power_frac,
     }

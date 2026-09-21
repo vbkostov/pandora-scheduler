@@ -69,6 +69,46 @@ def test_does_not_fill_gap_when_boresight_is_not_visible():
     assert filled == []
 
 
+def test_does_not_fill_edge_gap():
+    builder = _builder()
+    _constant_visibility(builder, True)
+    t0 = datetime(2026, 3, 1, 0, 0)
+    segments = [
+        (t0, t0 + timedelta(minutes=4), False),
+        (t0 + timedelta(minutes=4), t0 + timedelta(minutes=20), True),
+    ]
+
+    adjusted, filled = builder._fill_science_segments_with_startracker_gaps(
+        segments, 10.0, 20.0
+    )
+
+    assert adjusted == segments
+    assert filled == []
+
+
+def test_does_not_fill_isolated_gap():
+    builder = _builder()
+    _constant_visibility(builder, True)
+    t0 = datetime(2026, 3, 1, 0, 0)
+    segments = [
+        (t0, t0 + timedelta(minutes=20), True),
+        (t0 + timedelta(minutes=20), t0 + timedelta(minutes=24), False),
+        (t0 + timedelta(minutes=24), t0 + timedelta(minutes=28), False),
+        (t0 + timedelta(minutes=28), t0 + timedelta(minutes=40), True),
+    ]
+
+    adjusted, filled = builder._fill_science_segments_with_startracker_gaps(
+        segments, 10.0, 20.0
+    )
+
+    assert adjusted == [
+        (t0, t0 + timedelta(minutes=20), True),
+        (t0 + timedelta(minutes=20), t0 + timedelta(minutes=28), False),
+        (t0 + timedelta(minutes=28), t0 + timedelta(minutes=40), True),
+    ]
+    assert filled == []
+
+
 def test_disabled_or_long_gap_is_unchanged():
     t0 = datetime(2026, 3, 1, 0, 0)
     segments = [

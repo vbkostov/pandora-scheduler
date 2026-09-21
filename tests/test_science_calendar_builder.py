@@ -648,6 +648,8 @@ class TestOccVisibilityScore:
             "Sun_Sep": [float(sun_sep)] * n_minutes,
             "Moon_Sep": [float(moon_sep)] * n_minutes,
             "Earth_Sep": [float(earth_sep)] * n_minutes,
+            "Roll_Deg": [0.0] * n_minutes,
+            "Solar_Power_Frac": [1.0] * n_minutes,
         })
 
     def test_fully_visible_returns_zero_frac(self, tmp_path):
@@ -665,6 +667,18 @@ class TestOccVisibilityScore:
         builder = self._make_builder(tmp_path, allow_st=True)
         # Sun_Sep < 91 → boresight fail
         df = self._make_vis_df(10, visible=0, sun_sep=50, moon_sep=50, earth_sep=130)
+        _write_visibility(tmp_path, "OccStar", df)
+        ok, frac = builder._occ_visibility_score(
+            "OccStar", datetime(2026, 3, 1, 12, 0), datetime(2026, 3, 1, 12, 10),
+        )
+        assert ok is False
+        assert frac == 1.0
+
+    def test_persisted_earth_threshold_is_used(self, tmp_path):
+        """Use the threshold selected during visibility generation."""
+        builder = self._make_builder(tmp_path, allow_st=True)
+        df = self._make_vis_df(10, visible=0, sun_sep=120, moon_sep=50, earth_sep=120)
+        df["Earth_Threshold"] = 121.0
         _write_visibility(tmp_path, "OccStar", df)
         ok, frac = builder._occ_visibility_score(
             "OccStar", datetime(2026, 3, 1, 12, 0), datetime(2026, 3, 1, 12, 10),
@@ -695,6 +709,19 @@ class TestOccVisibilityScore:
         assert ok is True
         assert frac == 1.0  # 100% of segment is Visible=0
 
+    def test_no_roll_or_power_is_not_st_only(self, tmp_path):
+        """Reject intervals where no acceptable roll was available."""
+        builder = self._make_builder(tmp_path, allow_st=True)
+        df = self._make_vis_df(10, visible=0, sun_sep=120, moon_sep=50, earth_sep=130)
+        df["Roll_Deg"] = np.nan
+        df["Solar_Power_Frac"] = 0.5
+        _write_visibility(tmp_path, "OccStar", df)
+        ok, frac = builder._occ_visibility_score(
+            "OccStar", datetime(2026, 3, 1, 12, 0), datetime(2026, 3, 1, 12, 10),
+        )
+        assert ok is False
+        assert frac == 1.0
+
     def test_partial_visibility_st_violation_scored(self, tmp_path):
         """Some minutes not visible → falls through to extended check,
         computes real ST violation fraction (not the fast path)."""
@@ -712,6 +739,8 @@ class TestOccVisibilityScore:
             "Sun_Sep": [120.0] * n,
             "Moon_Sep": [50.0] * n,
             "Earth_Sep": [130.0] * n,
+            "Roll_Deg": [0.0] * n,
+            "Solar_Power_Frac": [1.0] * n,
         })
         _write_visibility(tmp_path, "OccStar", df)
         ok, frac = builder._occ_visibility_score(

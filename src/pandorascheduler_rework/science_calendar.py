@@ -1075,6 +1075,20 @@ class _ScienceCalendarBuilder:
             if is_visible or seg_stop - seg_start > max_gap:
                 continue
 
+            # Only bridge an internal gap. Edge gaps and isolated gaps do not
+            # have visible science on both sides and must remain non-visible.
+            if idx == 0 or idx == len(adjusted) - 1:
+                continue
+            _, prev_stop, prev_visible = adjusted[idx - 1]
+            next_start, _, next_visible = adjusted[idx + 1]
+            if (
+                not prev_visible
+                or not next_visible
+                or prev_stop != seg_start
+                or next_start != seg_stop
+            ):
+                continue
+
             visible = self._science_interval_visibility(
                 ra_deg,
                 dec_deg,
@@ -2795,7 +2809,7 @@ class _ScienceCalendarBuilder:
         seg_start: datetime,
         seg_stop: datetime,
     ) -> bool:
-        """Return True if *star_name* has any visible minutes in [seg_start, seg_stop).
+        """Return True if *star_name* is visible for every minute in the segment.
 
         Reads the target's ``aux_targets`` visibility parquet and checks the
         pre-computed ``Visible`` flag.  Returns False when the target is not
@@ -2813,7 +2827,7 @@ class _ScienceCalendarBuilder:
         aligned = prepared.reindex(minute_index, fill_value=False)
         if aligned.empty:
             return False
-        return bool(aligned.any())
+        return bool(aligned.all())
 
     def _occ_visibility_score(
         self,
@@ -2874,20 +2888,65 @@ class _ScienceCalendarBuilder:
         if not needed.issubset(seg.columns):
             return False, 1.0
 
-        # Check boresight constraints on every minute in the segment.
+        # Check boresight constraints on every minute in the segment. New
+        # artifacts persist the exact day/night threshold used by visibility
+        # generation. Older artifacts cannot identify the day/night branch;
+        # use the strictest configured occultation threshold rather than
+        # silently applying the science/legacy threshold.
+        if "Earth_Threshold" in seg.columns:
+            earth_threshold = pd.to_numeric(
+                seg["Earth_Threshold"], errors="coerce"
+            )
+        elif self.config.earth_keepouts == "different":
+            occultation_thresholds = [
+                value
+                for value in (
+                    self.config.earth_avoidance_day_deg_occultation,
+                    self.config.earth_avoidance_night_deg_occultation,
+                )
+                if value is not None
+            ]
+            earth_threshold = max(
+                occultation_thresholds,
+                default=self.config.earth_avoidance_deg,
+            )
+        else:
+            earth_threshold = self.config.earth_avoidance_deg
+
         boresight_ok = (
             (seg["Sun_Sep"] >= self.config.sun_avoidance_deg)
             & (seg["Moon_Sep"] >= self.config.moon_avoidance_deg)
-            & (seg["Earth_Sep"] >= self.config.earth_avoidance_deg)
+            & (seg["Earth_Sep"] > earth_threshold)
         )
 
         if not boresight_ok.all():
             # At least one minute fails a boresight constraint — reject.
             return False, 1.0
 
-        # Boresight passes everywhere → failure is star-tracker only.
+        # Boresight passes everywhere. A non-visible minute is ST-only only if
+        # visibility generation found an acceptable-power roll to evaluate.
+        # Without these diagnostics, older artifacts cannot distinguish an ST
+        # failure from a no-roll/power failure and must be rejected safely.
+        diagnostics = {"Roll_Deg", "Solar_Power_Frac"}
+        if not diagnostics.issubset(seg.columns):
+            return False, 1.0
+
+        roll_deg = pd.to_numeric(seg["Roll_Deg"], errors="coerce")
+        power_frac = pd.to_numeric(seg["Solar_Power_Frac"], errors="coerce")
+        not_visible = seg["Visible"] <= 0
+        st_only = (
+            not_visible
+            & roll_deg.notna()
+            & power_frac.notna()
+            & (power_frac >= self.config.min_power_frac)
+        )
+        if not bool(st_only[not_visible].all()):
+            return False, 1.0
+
+        # Boresight passes and every non-visible minute has a valid roll with
+        # sufficient power, so the remaining failure is star-tracker-only.
         n_total = len(seg)
-        n_not_visible = int((seg["Visible"] <= 0).sum())
+        n_not_visible = int(st_only.sum())
         st_frac = n_not_visible / n_total if n_total else 1.0
 
         LOGGER.debug(
@@ -3246,21 +3305,39 @@ def _read_visibility_extended(
 ) -> Optional[pd.DataFrame]:
     """Read visibility parquet with boresight separation columns.
 
-    Returns a DataFrame with Time, Visible, Sun_Sep, Moon_Sep, Earth_Sep
-    (when available).  Falls back gracefully when separation columns are
-    absent (older parquet files).
+    Returns a DataFrame with Time, Visible, Sun_Sep, Moon_Sep, Earth_Sep,
+    Earth_Threshold, Roll_Deg, and Solar_Power_Frac when available. Falls
+    back gracefully for older parquet files.
     """
     path = directory / f"Visibility for {name}.parquet"
     cols = [
         "Time(MJD_UTC)", "Time_UTC", "Visible",
-        "Sun_Sep", "Moon_Sep", "Earth_Sep",
+        "Sun_Sep", "Moon_Sep", "Earth_Sep", "Earth_Threshold",
+        "Roll_Deg", "Solar_Power_Frac",
     ]
     df = read_parquet_cached(str(path), columns=cols)
     if df is None:
-        # Fall back to minimal columns (older parquet).
+        # Older artifacts predate Earth_Threshold. Read the original diagnostic
+        # columns first, then add the threshold when it is available.
         df = read_parquet_cached(
-            str(path), columns=["Time(MJD_UTC)", "Visible"],
+            str(path),
+            columns=[
+                "Time(MJD_UTC)", "Time_UTC", "Visible",
+                "Sun_Sep", "Moon_Sep", "Earth_Sep", "Roll_Deg",
+                "Solar_Power_Frac",
+            ],
         )
+        if df is None:
+            # Fall back to minimal columns (older parquet).
+            df = read_parquet_cached(
+                str(path), columns=["Time(MJD_UTC)", "Visible"],
+            )
+        else:
+            threshold_df = read_parquet_cached(
+                str(path), columns=["Earth_Threshold"],
+            )
+            if threshold_df is not None:
+                df["Earth_Threshold"] = threshold_df["Earth_Threshold"]
     return df
 
 
