@@ -37,9 +37,9 @@
   "allow_science_soft_startracker_tail": false,
   "science_soft_startracker_tail_minutes": 15,
 
-  "science_soft_st_sun_min_deg": null,
-  "science_soft_st_moon_min_deg": null,
-  "science_soft_st_earthlimb_min_deg": null,
+  "science_soft_st_sun_min_deg": 34,
+  "science_soft_st_moon_min_deg": 10,
+  "science_soft_st_earthlimb_min_deg": 20,
   "science_soft_st1_earthlimb_min_deg": null,
   "science_soft_st2_earthlimb_min_deg": null,
   "science_soft_st_required": 1,
@@ -52,7 +52,7 @@
   "parallel_workers": 13,
   "write_run_config_manifest": true,
 
-  "exoplanet_only_mode": true,
+  "exoplanet_only_mode": false,
 
   "primary_only_mode": false,
   "use_target_list_for_occultations": false,
