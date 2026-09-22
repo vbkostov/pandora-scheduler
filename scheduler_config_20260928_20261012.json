@@ -39,7 +39,6 @@
 
   "allow_science_soft_startracker_tail": false,
   "science_soft_startracker_tail_minutes": 15,
-
   "science_soft_st_sun_min_deg": 34,
   "science_soft_st_moon_min_deg": 10,
   "science_soft_st_earthlimb_min_deg": 20,
@@ -57,7 +56,7 @@
 
   "exoplanet_only_mode": false,
 
-  "primary_only_mode": true,
+  "primary_only_mode": false,
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
