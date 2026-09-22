@@ -179,6 +179,75 @@ def _save_figures(figures: list[Figure], output_path: Path) -> list[Path]:
     return saved
 
 
+def _sequence_id_token(value: Any) -> str:
+    """Normalize numeric XML/CSV IDs without losing leading-zero equivalence."""
+    text = str(value).strip()
+    try:
+        return str(int(text))
+    except ValueError:
+        return text
+
+
+def _load_st_gap_filled_sequences(data_dir: Path) -> set[tuple[str, str]]:
+    """Load sequence IDs that the calendar builder actually ST-gap-filled."""
+    provenance_path = data_dir.parent / "Pandora_science_calendar_sequence_provenance.csv"
+    try:
+        provenance = pd.read_csv(provenance_path, dtype=str)
+    except (OSError, pd.errors.ParserError):
+        return set()
+
+    required = {"visit_id", "sequence_id", "science_st_gap_fill_used"}
+    if not required.issubset(provenance.columns):
+        return set()
+
+    used = provenance["science_st_gap_fill_used"].str.strip().str.lower().isin(
+        {"true", "1", "yes"}
+    )
+    return {
+        (_sequence_id_token(row.visit_id), _sequence_id_token(row.sequence_id))
+        for row in provenance.loc[used, ["visit_id", "sequence_id"]].itertuples(
+            index=False
+        )
+    }
+
+
+def _draw_visibility_status_overlay(
+    ax,
+    start_num: float,
+    y: int,
+    dur_days: float,
+    visible: np.ndarray,
+    st_gap_filled: bool,
+) -> tuple[int, int]:
+    """Draw black non-visible and blue provenance-confirmed ST-gap minutes."""
+    visible = np.asarray(visible, dtype=bool)
+    non_visible = ~visible
+    bridged = non_visible if st_gap_filled else np.zeros_like(non_visible)
+    ordinary = non_visible & ~bridged
+    minute_width = dur_days / len(visible) if len(visible) else 0.0
+
+    for mask, color in ((ordinary, "black"), (bridged, "blue")):
+        indices = np.flatnonzero(mask)
+        if indices.size == 0:
+            continue
+        split_at = np.flatnonzero(np.diff(indices) > 1) + 1
+        for block in np.split(indices, split_at):
+            ax.add_patch(
+                Rectangle(
+                    (start_num + int(block[0]) * minute_width, y - 0.35),
+                    len(block) * minute_width,
+                    0.7,
+                    facecolor=color,
+                    edgecolor="none",
+                    alpha=1.0,
+                    linewidth=0,
+                    zorder=1000,
+                )
+            )
+
+    return int(non_visible.sum()), int(bridged.sum())
+
+
 class ScheduleVisualizer:
     """Class for creating visualizations of schedule analysis.
 
@@ -2502,6 +2571,7 @@ class ScheduleVisualizer:
         x_min = float("inf")
         x_max = float("-inf")
         st_gap_bridged_total = 0
+        non_visible_total = 0
         total_mins = 0
         free_time_total = 0.0
 
@@ -2530,30 +2600,15 @@ class ScheduleVisualizer:
             )
             ax.add_patch(rect)
 
-            # Overlay minutes represented by the ST-gap mask.
+            # Without run provenance, non-visible minutes cannot be classified
+            # as ST-gap-filled; show them as ordinary non-visible instead.
             n_mins = len(vis_arr)
             total_mins += n_mins
-            if n_mins > 0 and not np.all(vis_arr):
-                min_dur = dur_days / n_mins
-                in_block = False
-                block_start = 0
-                for i in range(n_mins + 1):
-                    if i < n_mins and not vis_arr[i]:
-                        if not in_block:
-                            block_start = i
-                            in_block = True
-                    else:
-                        if in_block:
-                            x0 = start_num + block_start * min_dur
-                            width = (i - block_start) * min_dur
-                            r = Rectangle(
-                                (x0, y - 0.35), width, 0.7,
-                                facecolor="black", edgecolor="none",
-                                alpha=1.00, linewidth=0, zorder=1000
-                            )
-                            ax.add_patch(r)
-                            st_gap_bridged_total += i - block_start
-                            in_block = False
+            non_visible, bridged = _draw_visibility_status_overlay(
+                ax, start_num, y, dur_days, vis_arr, st_gap_filled=False
+            )
+            non_visible_total += non_visible
+            st_gap_bridged_total += bridged
 
             if show_sequence_labels:
                 mid = start_num + dur_days / 2
@@ -2581,7 +2636,8 @@ class ScheduleVisualizer:
         )
         ax.set_title(
             f"{title}\n"
-            f"(total min: {total_mins}; ST_gap_bridged min: {st_gap_bridged_total}; "
+            f"(total min: {total_mins}; non-visible min: {non_visible_total}; "
+            f"ST_gap_bridged min: {st_gap_bridged_total}; "
             f"Free Time: {free_time_total:.1f} min)",
             fontsize=12, pad=10,
         )
@@ -2590,7 +2646,8 @@ class ScheduleVisualizer:
 
         # Legend
         legend_items = [
-            Patch(facecolor="red", alpha=0.75, label="ST_gap_bridged"),
+            Patch(facecolor="black", label="Non-visible"),
+            Patch(facecolor="blue", label="ST_gap_bridged"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
         used_priorities = sorted(
@@ -2617,6 +2674,7 @@ class ScheduleVisualizer:
         fig, ax = plt.subplots(figsize=figsize)
         priority_colors = self._get_priority_colors([1, 2, 3, 4, 5, 6, 7, 8])
         free_time_color = "lightgreen"
+        st_gap_filled_sequences = _load_st_gap_filled_sequences(data_dir)
 
         exoplanet_csv = data_dir / "exoplanet_targets.csv"
         planet_to_star: dict[str, str] = {}
@@ -2733,6 +2791,7 @@ class ScheduleVisualizer:
         x_min = float("inf")
         x_max = float("-inf")
         st_gap_bridged_total = 0
+        non_visible_total = 0
         total_mins = 0
         free_time_total = 0.0
 
@@ -2766,32 +2825,20 @@ class ScheduleVisualizer:
 
             n_mins = len(vis_arr)
             total_mins += n_mins
-            if n_mins > 0 and not np.all(vis_arr):
-                min_dur = dur_days / n_mins
-                in_block = False
-                block_start = 0
-                for i in range(n_mins + 1):
-                    if i < n_mins and not vis_arr[i]:
-                        if not in_block:
-                            block_start = i
-                            in_block = True
-                    elif in_block:
-                        x0 = start_num + block_start * min_dur
-                        width = (i - block_start) * min_dur
-                        ax.add_patch(
-                            Rectangle(
-                                (x0, y - 0.35),
-                                width,
-                                0.7,
-                                facecolor="black",
-                                edgecolor="none",
-                                alpha=1.0,
-                                linewidth=0,
-                                zorder=1000,
-                            )
-                        )
-                        st_gap_bridged_total += i - block_start
-                        in_block = False
+            provenance_key = (
+                _sequence_id_token(vid),
+                _sequence_id_token(seq.id),
+            )
+            non_visible, bridged = _draw_visibility_status_overlay(
+                ax,
+                start_num,
+                y,
+                dur_days,
+                vis_arr,
+                st_gap_filled=provenance_key in st_gap_filled_sequences,
+            )
+            non_visible_total += non_visible
+            st_gap_bridged_total += bridged
 
             if show_sequence_labels:
                 mid = start_num + dur_days / 2
@@ -2816,7 +2863,8 @@ class ScheduleVisualizer:
             title_suffix = f"\n{len(missing_targets)} target(s) missing visibility parquet"
         ax.set_title(
             f"{title}\n"
-            f"(total min: {total_mins}; ST_gap_bridged min: {st_gap_bridged_total}; "
+            f"(total min: {total_mins}; non-visible min: {non_visible_total}; "
+            f"ST_gap_bridged min: {st_gap_bridged_total}; "
             f"Free Time: {free_time_total:.1f} min)"
             f"{title_suffix}",
             fontsize=12,
@@ -2828,7 +2876,8 @@ class ScheduleVisualizer:
         from matplotlib.patches import Patch
 
         legend_items = [
-            Patch(facecolor="black", alpha=1.0, label="ST_gap_bridged"),
+            Patch(facecolor="black", label="Non-visible"),
+            Patch(facecolor="blue", label="ST_gap_bridged"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
         used_priorities = sorted(set(s.priority for _, s, _ in rows if s.target != "Free Time"))
