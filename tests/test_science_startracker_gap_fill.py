@@ -16,6 +16,7 @@ def _builder(*, enabled=True, max_gap_minutes=5):
         window_end=datetime(2026, 3, 2),
         allow_science_startracker_gap_fill=enabled,
         science_startracker_gap_max_minutes=max_gap_minutes,
+        min_science_sequence_minutes=8,
     )
     return builder
 
@@ -84,6 +85,42 @@ def test_does_not_fill_edge_gap():
 
     assert adjusted == segments
     assert filled == []
+
+
+def test_does_not_fill_gap_after_subminimum_visible_fragment():
+    builder = _builder()
+    _constant_visibility(builder, True)
+    t0 = datetime(2026, 3, 1, 0, 0)
+    segments = [
+        (t0, t0 + timedelta(minutes=3), True),
+        (t0 + timedelta(minutes=3), t0 + timedelta(minutes=15), False),
+        (t0 + timedelta(minutes=15), t0 + timedelta(minutes=35), True),
+    ]
+
+    adjusted, filled = builder._fill_science_segments_with_startracker_gaps(
+        segments, 10.0, 20.0
+    )
+
+    assert adjusted == segments
+    assert filled == []
+
+
+def test_fills_gap_before_subminimum_trailing_fragment():
+    builder = _builder(max_gap_minutes=15)
+    _constant_visibility(builder, True)
+    t0 = datetime(2026, 3, 1, 0, 0)
+    segments = [
+        (t0, t0 + timedelta(minutes=20), True),
+        (t0 + timedelta(minutes=20), t0 + timedelta(minutes=32), False),
+        (t0 + timedelta(minutes=32), t0 + timedelta(minutes=35), True),
+    ]
+
+    adjusted, filled = builder._fill_science_segments_with_startracker_gaps(
+        segments, 10.0, 20.0
+    )
+
+    assert adjusted == [(t0, t0 + timedelta(minutes=35), True)]
+    assert filled == [(t0 + timedelta(minutes=20), t0 + timedelta(minutes=32))]
 
 
 def test_does_not_fill_isolated_gap():

@@ -218,30 +218,48 @@ def _draw_visibility_status_overlay(
     dur_days: float,
     visible: np.ndarray,
     st_gap_filled: bool,
+    bridged_color: str,
 ) -> tuple[int, int]:
-    """Draw black non-visible and blue provenance-confirmed ST-gap minutes."""
+    """Draw black non-visible and half-height, sequence-colored ST-gap minutes."""
     visible = np.asarray(visible, dtype=bool)
     non_visible = ~visible
     bridged = non_visible if st_gap_filled else np.zeros_like(non_visible)
     ordinary = non_visible & ~bridged
     minute_width = dur_days / len(visible) if len(visible) else 0.0
 
-    for mask, color in ((ordinary, "black"), (bridged, "blue")):
+    for mask, color, height, is_bridged in (
+        (ordinary, "black", 0.7, False),
+        (bridged, bridged_color, 0.35, True),
+    ):
         indices = np.flatnonzero(mask)
         if indices.size == 0:
             continue
         split_at = np.flatnonzero(np.diff(indices) > 1) + 1
         for block in np.split(indices, split_at):
+            x_start = start_num + int(block[0]) * minute_width
+            block_width = len(block) * minute_width
+            if is_bridged:
+                ax.add_patch(
+                    Rectangle(
+                        (x_start, y - 0.35),
+                        block_width,
+                        0.7,
+                        facecolor=ax.get_facecolor(),
+                        edgecolor="none",
+                        linewidth=0,
+                        zorder=1000,
+                    )
+                )
             ax.add_patch(
                 Rectangle(
-                    (start_num + int(block[0]) * minute_width, y - 0.35),
-                    len(block) * minute_width,
-                    0.7,
+                    (x_start, y - height / 2),
+                    block_width,
+                    height,
                     facecolor=color,
                     edgecolor="none",
                     alpha=1.0,
                     linewidth=0,
-                    zorder=1000,
+                    zorder=1001 if is_bridged else 1000,
                 )
             )
 
@@ -2605,7 +2623,8 @@ class ScheduleVisualizer:
             n_mins = len(vis_arr)
             total_mins += n_mins
             non_visible, bridged = _draw_visibility_status_overlay(
-                ax, start_num, y, dur_days, vis_arr, st_gap_filled=False
+                ax, start_num, y, dur_days, vis_arr,
+                st_gap_filled=False, bridged_color=color,
             )
             non_visible_total += non_visible
             st_gap_bridged_total += bridged
@@ -2647,7 +2666,6 @@ class ScheduleVisualizer:
         # Legend
         legend_items = [
             Patch(facecolor="black", label="Non-visible"),
-            Patch(facecolor="blue", label="ST_gap_bridged"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
         used_priorities = sorted(
@@ -2836,6 +2854,7 @@ class ScheduleVisualizer:
                 dur_days,
                 vis_arr,
                 st_gap_filled=provenance_key in st_gap_filled_sequences,
+                bridged_color=color,
             )
             non_visible_total += non_visible
             st_gap_bridged_total += bridged
@@ -2877,7 +2896,6 @@ class ScheduleVisualizer:
 
         legend_items = [
             Patch(facecolor="black", label="Non-visible"),
-            Patch(facecolor="blue", label="ST_gap_bridged"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
         used_priorities = sorted(set(s.priority for _, s, _ in rows if s.target != "Free Time"))

@@ -1079,13 +1079,15 @@ class _ScienceCalendarBuilder:
             # have visible science on both sides and must remain non-visible.
             if idx == 0 or idx == len(adjusted) - 1:
                 continue
-            _, prev_stop, prev_visible = adjusted[idx - 1]
+            prev_start, prev_stop, prev_visible = adjusted[idx - 1]
             next_start, _, next_visible = adjusted[idx + 1]
+            min_context = self._science_min_duration()
             if (
                 not prev_visible
                 or not next_visible
                 or prev_stop != seg_start
                 or next_start != seg_stop
+                or prev_stop - prev_start < min_context
             ):
                 continue
 
