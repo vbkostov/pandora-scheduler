@@ -1167,6 +1167,8 @@ def check_if_transits_in_obs_window(
     *,
     prioritize_transit_bottom: bool = False,
     transit_bottom_fraction: float = 0.5,
+    require_transit_bottom_visibility: bool = False,
+    transit_bottom_visibility_min: float = 0.5,
     short_visit_threshold_hours: float = 12.0,
     short_visit_edge_buffer_hours: float = 1.5,
     long_visit_edge_buffer_hours: float = 4.0,

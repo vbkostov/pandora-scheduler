@@ -4,7 +4,7 @@
 
   "prioritize_transit_bottom": true,
   "transit_bottom_fraction": 0.75,
-  "require_transit_bottom_visibility": false,
+  "require_transit_bottom_visibility": true,
   "transit_bottom_visibility_min": 0.5,
 
   "min_visibility": 0.4,
