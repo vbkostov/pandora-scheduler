@@ -3,10 +3,14 @@
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from pandorascheduler_rework.config import PandoraSchedulerConfig
-from pandorascheduler_rework.pipeline import build_schedule
+from pandorascheduler_rework.pipeline import (
+    _append_time_critical_too_targets,
+    build_schedule,
+)
 
 
 class TestBuildScheduleV2:
@@ -77,6 +81,44 @@ class TestConfigDocumentation:
         repr_str = repr(config)
         assert "PandoraSchedulerConfig" in repr_str
         assert "transit_coverage_min=0.3" in repr_str
+
+
+def test_time_critical_too_target_is_added_to_primary_manifest(tmp_path, monkeypatch):
+    """Missing explicit ToOs may be sourced from the time-critical category."""
+
+    primary_path = tmp_path / "exoplanet_targets.csv"
+    too_path = tmp_path / "ToO_list.csv"
+    target_base = tmp_path / "target_definition_files"
+    (target_base / "time-critical").mkdir(parents=True)
+
+    pd.DataFrame([{"Planet Name": "Existing"}]).to_csv(primary_path, index=False)
+    too_path.write_text(
+        "Target, Obs Window Start, Obs Window Stop\n"
+        "TOI-270d,2026-10-12 00:00:00,2026-10-13 00:00:00\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "pandorascheduler_rework.pipeline.rework_helper.process_target_files",
+        lambda category, base_path: pd.DataFrame(
+            [
+                {
+                    "Planet Name": "TOI-270d",
+                    "Star Name": "TOI-270",
+                    "Priority": 0.0,
+                    "Number of Transits to Capture": 0,
+                }
+            ]
+        ),
+    )
+
+    _append_time_critical_too_targets(primary_path, too_path, target_base)
+
+    result = pd.read_csv(primary_path)
+    row = result.loc[result["Planet Name"] == "TOI-270d"].iloc[0]
+    assert row["Star Name"] == "TOI-270"
+    assert row["Priority"] == 0.0
+    assert row["Number of Transits to Capture"] == 0
 
 
 class TestBackwardCompatibility:

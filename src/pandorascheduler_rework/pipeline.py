@@ -140,6 +140,13 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
         out_data / "occultation-standard_targets.csv",
     ).resolve()
 
+    # Stage the ToO list before manifests are built so missing ToO targets can
+    # be resolved from the optional time-critical category.
+    too_list_csv = _stage_too_list(extra_inputs, output_dir, out_data)
+    target_definition_base = _coerce_optional_path(
+        extra_inputs.get("target_definition_base")
+    )
+
     # Handle target definition files if provided
     target_definition_files_raw = (
         ["exoplanet"] if config.exoplanet_only_mode else extra_inputs.get("target_definition_files")
@@ -153,10 +160,6 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
                 _target_definition_from_csv(monitoring_target_csv),
                 _target_definition_from_csv(occultation_target_csv),
             ],
-        )
-
-        target_definition_base = _coerce_optional_path(
-            extra_inputs.get("target_definition_base")
         )
 
         if target_definition_base is not None:
@@ -186,7 +189,12 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
             _target_definition_from_csv(occultation_target_csv),
         ]
 
-    too_list_csv = _stage_too_list(extra_inputs, output_dir, out_data)
+    if too_list_csv is not None and target_definition_base is not None:
+        _append_time_critical_too_targets(
+            primary_target_csv,
+            too_list_csv,
+            target_definition_base,
+        )
 
     if config.targets_manifest and not config.targets_manifest.exists():
         raise FileNotFoundError(
@@ -539,6 +547,57 @@ def _generate_target_manifests(
             target_definition_files,
             primary_target_csv.parent,
         )
+
+
+def _append_time_critical_too_targets(
+    primary_target_csv: Path,
+    too_list_csv: Path,
+    target_definition_base: Path,
+) -> None:
+    """Append missing explicit ToO targets from ``time-critical`` TDFs.
+
+    Time-critical targets are intentionally not part of the normal target
+    category list. They are loaded only when named by the run's ToO list, then
+    treated as primary-manifest rows so visibility generation and ToO lookup
+    use the same target definition.
+    """
+
+    time_critical_dir = target_definition_base / "time-critical"
+    if not time_critical_dir.is_dir():
+        return
+
+    too_table = pd.read_csv(too_list_csv, skipinitialspace=True)
+    if "Target" not in too_table.columns:
+        return
+
+    primary = pd.read_csv(primary_target_csv)
+    if "Planet Name" not in primary.columns:
+        return
+
+    known_targets = set(primary["Planet Name"].dropna().astype(str))
+    requested_targets = set(too_table["Target"].dropna().astype(str))
+    missing_targets = sorted(requested_targets - known_targets)
+    if not missing_targets:
+        return
+
+    time_critical = rework_helper.process_target_files(
+        "time-critical",
+        base_path=target_definition_base,
+    )
+    fallback = time_critical.loc[
+        time_critical["Planet Name"].astype(str).isin(missing_targets)
+    ]
+    if fallback.empty:
+        return
+
+    primary = pd.concat([primary, fallback], ignore_index=True)
+    primary.to_csv(primary_target_csv, index=False)
+    LOGGER.info(
+        "Added %d time-critical ToO target(s) to %s: %s",
+        len(fallback),
+        primary_target_csv,
+        ", ".join(fallback["Planet Name"].astype(str)),
+    )
 
 
 

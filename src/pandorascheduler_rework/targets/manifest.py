@@ -37,6 +37,7 @@ _STANDARD_CATEGORIES = {
     "occultation-standard",
 }
 _OCCULTATION_CATEGORY = "occultation-standard"
+_TIME_CRITICAL_CATEGORY = "time-critical"
 _DEFAULT_OBSERVATION_EPOCH = Time("2026-06-01")
 
 
@@ -88,7 +89,14 @@ def build_target_manifest(
         observation_epoch = Time(observation_epoch)
 
     readouts = _load_readout_schemes(base_dir)
-    priority_table = _load_priority_table(category_dir, category)
+    # Time-critical definitions are injected only for explicit ToOs. They do
+    # not have a normal priority table because their scheduling windows come
+    # from ToO_list.csv rather than the transit-quota workflow.
+    priority_table = (
+        None
+        if category == _TIME_CRITICAL_CATEGORY
+        else _load_priority_table(category_dir, category)
+    )
 
     rows: List[MutableMapping[str, object]] = []
     for json_path in sorted(category_dir.glob("*_target_definition.json")):
@@ -216,7 +224,10 @@ def _apply_priority(
 ) -> None:
     filename = row.get("Original Filename")
 
-    if category in _EXOPLANET_CATEGORIES:
+    if category == _TIME_CRITICAL_CATEGORY:
+        row["Priority"] = 0.0
+        row["Number of Transits to Capture"] = 0
+    elif category in _EXOPLANET_CATEGORIES:
         if priority_table is None:
             raise TargetDefinitionError(
                 f"Missing priority table for category '{category}'"
@@ -259,7 +270,7 @@ def _apply_priority(
 def _apply_identity_columns(row: MutableMapping[str, object], category: str) -> None:
     star_name = str(row.get("Star Name", "") or "")
 
-    if category in _EXOPLANET_CATEGORIES:
+    if category in _EXOPLANET_CATEGORIES or category == _TIME_CRITICAL_CATEGORY:
         planet_name_raw = str(row.get("Planet Name", "") or "")
         if planet_name_raw:
             planet_name = _format_planet_name(planet_name_raw)
