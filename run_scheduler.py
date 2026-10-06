@@ -986,6 +986,20 @@ def main() -> int:
         transit_cov = float(
             _get_val("transit_coverage_min", args.transit_coverage, 0.4)
         )
+        prioritize_transit_bottom = _as_bool(
+            _get_val("prioritize_transit_bottom", None, False),
+            False,
+        )
+        transit_bottom_fraction = float(
+            _get_val("transit_bottom_fraction", None, 0.5)
+        )
+        require_transit_bottom_visibility = _as_bool(
+            _get_val("require_transit_bottom_visibility", None, False),
+            False,
+        )
+        transit_bottom_visibility_min = float(
+            _get_val("transit_bottom_visibility_min", None, 0.5)
+        )
         min_vis = float(_get_val("min_visibility", args.min_visibility, 0.5))
 
         # Coerce unified transit_scheduling_weights from JSON or CLI into a 3-tuple
@@ -1401,6 +1415,10 @@ def main() -> int:
             output_dir=output_dir,
             # Scheduling Thresholds
             transit_coverage_min=transit_cov,
+            prioritize_transit_bottom=prioritize_transit_bottom,
+            transit_bottom_fraction=transit_bottom_fraction,
+            require_transit_bottom_visibility=require_transit_bottom_visibility,
+            transit_bottom_visibility_min=transit_bottom_visibility_min,
             min_visibility=min_vis,
             commissioning_days=commissioning_days,
             # Transit edge buffers
@@ -1523,6 +1541,15 @@ def main() -> int:
         logger.info("Run data directory: %s", run_data_dir)
         logger.info("PRIMARY_ONLY_MODE=%s", str(primary_only_mode).upper())
         logger.info("EXOPLANET_ONLY_MODE=%s", str(exoplanet_only_mode).upper())
+        logger.info(
+            "PRIORITIZE_TRANSIT_BOTTOM=%s",
+            str(prioritize_transit_bottom).upper(),
+        )
+        logger.info(
+            "REQUIRE_TRANSIT_BOTTOM_VISIBILITY=%s (MIN=%.3f)",
+            str(require_transit_bottom_visibility).upper(),
+            transit_bottom_visibility_min,
+        )
         logger.info(
             "INCLUDE_OCCULTATION_SEQUENCES_IN_XML=%s",
             str(enable_occultation_xml).upper(),

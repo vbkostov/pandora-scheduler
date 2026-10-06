@@ -290,6 +290,10 @@ def run_scheduler(
             list(config.transit_scheduling_weights),
             config.transit_coverage_min,
             inputs.paths.targets_dir,
+            prioritize_transit_bottom=config.prioritize_transit_bottom,
+            transit_bottom_fraction=config.transit_bottom_fraction,
+            require_transit_bottom_visibility=config.require_transit_bottom_visibility,
+            transit_bottom_visibility_min=config.transit_bottom_visibility_min,
             short_visit_threshold_hours=config.short_visit_threshold_hours,
             short_visit_edge_buffer_hours=config.short_visit_edge_buffer_hours,
             long_visit_edge_buffer_hours=config.long_visit_edge_buffer_hours,
@@ -503,6 +507,32 @@ def _initialize_tracker(
                 planet_data["Transit_Coverage"] < config.transit_coverage_min
             ]
         ).reset_index(drop=True)
+
+        if config.require_transit_bottom_visibility and not planet_data.empty:
+            bottom_admission = []
+            start_transits = Time(
+                planet_data["Transit_Start"].to_numpy(),
+                format="mjd",
+                scale="utc",
+            ).to_datetime()
+            end_transits = Time(
+                planet_data["Transit_Stop"].to_numpy(),
+                format="mjd",
+                scale="utc",
+            ).to_datetime()
+            for transit_start, transit_stop in zip(start_transits, end_transits):
+                bottom_visibility = observation_utils.transit_bottom_visibility_fraction(
+                    inputs.paths.targets_dir,
+                    star_name,
+                    transit_start,
+                    transit_stop,
+                    config.transit_bottom_fraction,
+                )
+                bottom_admission.append(
+                    bottom_visibility is not None
+                    and bottom_visibility >= config.transit_bottom_visibility_min
+                )
+            planet_data = planet_data.loc[bottom_admission].reset_index(drop=True)
 
         # If no transits remain after filtering, skip this planet
         if planet_data.empty or len(planet_data) == 0:

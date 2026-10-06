@@ -40,6 +40,62 @@ _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 _OBS_WINDOW_COLUMN = "Obs Window (hrs)"
 
 
+def transit_bottom_visibility_fraction(
+    targets_dir: Path,
+    star_name: str,
+    transit_start: datetime,
+    transit_stop: datetime,
+    bottom_fraction: float,
+) -> Optional[float]:
+    """Return visible-minute fraction for the centered transit interval."""
+    visibility_path = resolve_star_visibility_file(targets_dir, star_name)
+    if visibility_path is None:
+        return None
+
+    visibility = read_parquet_cached(str(visibility_path))
+    if visibility is None or "Visible" not in visibility.columns:
+        return None
+
+    if "Time(MJD_UTC)" in visibility.columns:
+        times = pd.DatetimeIndex(
+            Time(
+                visibility["Time(MJD_UTC)"].to_numpy(dtype=float),
+                format="mjd",
+                scale="utc",
+            ).to_datetime()
+        )
+    elif "Time_UTC" in visibility.columns:
+        times = pd.DatetimeIndex(
+            pd.to_datetime(visibility["Time_UTC"], errors="coerce")
+        )
+    else:
+        return None
+
+    if times.tz is not None:
+        times = times.tz_localize(None)
+    minute_visibility = pd.Series(
+        pd.to_numeric(visibility["Visible"], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=float)
+        > 0.5,
+        index=times.round("min"),
+    ).groupby(level=0).max()
+
+    total_minutes = int((transit_stop - transit_start).total_seconds() // 60)
+    if total_minutes <= 0:
+        return None
+    bottom_minutes = max(1, int(np.ceil(total_minutes * bottom_fraction)))
+    bottom_offset = (total_minutes - bottom_minutes) // 2
+    transit_grid = pd.date_range(
+        transit_start,
+        periods=total_minutes,
+        freq="min",
+    )
+    center_grid = transit_grid[bottom_offset : bottom_offset + bottom_minutes]
+    values = minute_visibility.reindex(center_grid, fill_value=False)
+    return float(values.to_numpy(dtype=bool).mean())
+
+
 class TransitUnschedulableError(ValueError):
     """Raised when a transit cannot be scheduled with the required edge buffers."""
 
@@ -1109,6 +1165,8 @@ def check_if_transits_in_obs_window(
     transit_coverage_min: float,
     targets_dir: Path,
     *,
+    prioritize_transit_bottom: bool = False,
+    transit_bottom_fraction: float = 0.5,
     short_visit_threshold_hours: float = 12.0,
     short_visit_edge_buffer_hours: float = 1.5,
     long_visit_edge_buffer_hours: float = 4.0,
@@ -1179,12 +1237,6 @@ def check_if_transits_in_obs_window(
         if planet_data.empty:
             continue
 
-        planet_data = planet_data.drop(
-            planet_data.index[planet_data["Transit_Coverage"] < transit_coverage_min]
-        ).reset_index(drop=True)
-        if planet_data.empty:
-            continue
-
         start_times = Time(
             planet_data["Transit_Start"].to_numpy(), format="mjd", scale="utc"
         ).to_value("datetime")
@@ -1203,17 +1255,146 @@ def check_if_transits_in_obs_window(
         if start_series.empty:
             continue
 
-        lifetime_mask = (pandora_start <= start_series) & (stop_series <= pandora_stop)
-        schedule_mask = (sched_start <= start_series) & (stop_series <= sched_stop)
+        raw_start_series = start_series.copy()
+        raw_stop_series = stop_series.copy()
+        start_series = start_series.dt.floor("min")
+        stop_series = stop_series.dt.floor("min")
+
+        coverage_values = planet_data["Transit_Coverage"].to_numpy(
+            dtype=float, copy=False
+        )
+        saa_values = planet_data["SAA_Overlap"].to_numpy(dtype=float, copy=False)
+
+        # The planet parquet stores aggregate full-transit coverage. The optional
+        # bottom-visibility requirement is evaluated before either metric is used
+        # to filter candidate transits.
+        bottom_coverage_values = coverage_values.copy()
+        bottom_visibility_available = np.zeros(len(planet_data), dtype=bool)
+        if prioritize_transit_bottom or require_transit_bottom_visibility:
+            star_visibility_cache: dict[str, Optional[pd.Series]] = {}
+
+            def _load_star_visibility(star_name: str) -> Optional[pd.Series]:
+                if star_name in star_visibility_cache:
+                    return star_visibility_cache[star_name]
+
+                visibility_path = resolve_star_visibility_file(
+                    targets_dir, star_name
+                )
+                if visibility_path is None:
+                    star_visibility_cache[star_name] = None
+                    return None
+
+                visibility = read_parquet_cached(str(visibility_path))
+                if visibility is None or "Visible" not in visibility.columns:
+                    star_visibility_cache[star_name] = None
+                    return None
+
+                if "Time(MJD_UTC)" in visibility.columns:
+                    times = pd.DatetimeIndex(
+                        Time(
+                            visibility["Time(MJD_UTC)"].to_numpy(dtype=float),
+                            format="mjd",
+                            scale="utc",
+                        ).to_datetime()
+                    )
+                elif "Time_UTC" in visibility.columns:
+                    times = pd.DatetimeIndex(
+                        pd.to_datetime(visibility["Time_UTC"], errors="coerce")
+                    )
+                else:
+                    star_visibility_cache[star_name] = None
+                    return None
+
+                if times.tz is not None:
+                    times = times.tz_localize(None)
+                minute_visibility = pd.Series(
+                    pd.to_numeric(visibility["Visible"], errors="coerce")
+                    .fillna(0.0)
+                    .to_numpy(dtype=float)
+                    > 0.5,
+                    index=times.round("min"),
+                )
+                minute_visibility = minute_visibility.groupby(level=0).max()
+                star_visibility_cache[star_name] = minute_visibility
+                return minute_visibility
+
+            def _bottom_coverage(
+                minute_visibility: Optional[pd.Series],
+                transit_start: datetime,
+                transit_stop: datetime,
+            ) -> Optional[float]:
+                if minute_visibility is None:
+                    return None
+                total_minutes = int(
+                    (transit_stop - transit_start).total_seconds() // 60
+                )
+                if total_minutes <= 0:
+                    return None
+                bottom_minutes = max(
+                    1,
+                    int(np.ceil(total_minutes * transit_bottom_fraction)),
+                )
+                bottom_offset = (total_minutes - bottom_minutes) // 2
+                transit_grid = pd.date_range(
+                    transit_start,
+                    periods=total_minutes,
+                    freq="min",
+                )
+                center_grid = transit_grid[
+                    bottom_offset : bottom_offset + bottom_minutes
+                ]
+                values = minute_visibility.reindex(center_grid, fill_value=False)
+                return float(values.to_numpy(dtype=bool).mean())
+
+            star_name = str(planet_lookup.loc[planet_name, "Star Name"])
+            minute_visibility = _load_star_visibility(star_name)
+            for j, (ts, te) in enumerate(zip(start_series, stop_series)):
+                bottom_coverage = _bottom_coverage(
+                    minute_visibility,
+                    ts.to_pydatetime(),
+                    te.to_pydatetime(),
+                )
+                if bottom_coverage is not None:
+                    bottom_coverage_values[j] = bottom_coverage
+                    bottom_visibility_available[j] = True
+
+        admission_mask = coverage_values >= transit_coverage_min
+        if require_transit_bottom_visibility:
+            admission_mask &= (
+                bottom_visibility_available
+                & (bottom_coverage_values >= transit_bottom_visibility_min)
+            )
+            if not bottom_visibility_available.any():
+                LOGGER.warning(
+                    "No star visibility mask available for %s; bottom-visibility "
+                    "admission rejected all transits",
+                    planet_name,
+                )
+
+        if not admission_mask.any():
+            continue
+
+        planet_data = planet_data.loc[admission_mask].reset_index(drop=True)
+        raw_start_series = raw_start_series.loc[admission_mask].reset_index(drop=True)
+        raw_stop_series = raw_stop_series.loc[admission_mask].reset_index(drop=True)
+        start_series = start_series.loc[admission_mask].reset_index(drop=True)
+        stop_series = stop_series.loc[admission_mask].reset_index(drop=True)
+        coverage_values = coverage_values[admission_mask]
+        saa_values = saa_values[admission_mask]
+        bottom_coverage_values = bottom_coverage_values[admission_mask]
+
+        lifetime_mask = (pandora_start <= raw_start_series) & (
+            raw_stop_series <= pandora_stop
+        )
+        schedule_mask = (sched_start <= raw_start_series) & (
+            raw_stop_series <= sched_stop
+        )
         lifetime_count = int(lifetime_mask.sum())
         schedule_count = int(schedule_mask.sum())
 
         tracker.loc[mask, "Transits Left in Lifetime"] = lifetime_count
         tracker.loc[mask, "Transits Left in Schedule"] = schedule_count
         tracker.loc[mask, "Transit Priority"] = lifetime_count - transits_needed
-
-        start_series = start_series.dt.floor("min")
-        stop_series = stop_series.dt.floor("min")
 
         # Get per-target visit duration and compute edge buffer
         visit_duration = get_target_visit_duration(str(planet_name), target_list)
@@ -1262,11 +1443,6 @@ def check_if_transits_in_obs_window(
         if transits_needed == 0:
             continue
 
-        coverage_values = planet_data["Transit_Coverage"].to_numpy(
-            dtype=float, copy=False
-        )
-        saa_values = planet_data["SAA_Overlap"].to_numpy(dtype=float, copy=False)
-
         for j, (window_start, window_stop) in enumerate(zip(early_start, late_start)):
             if window_start > window_stop:
                 continue
@@ -1285,8 +1461,9 @@ def check_if_transits_in_obs_window(
             schedule_factor = 1 - (gap_time / visit_duration)
             transit_coverage = float(coverage_values[j])
             saa_overlap = float(saa_values[j])
+            coverage_score = float(bottom_coverage_values[j])
             quality_factor = (
-                (transit_scheduling_weights[0] * transit_coverage)
+                (transit_scheduling_weights[0] * coverage_score)
                 + (transit_scheduling_weights[1] * (1 - saa_overlap))
                 + (transit_scheduling_weights[2] * schedule_factor)
             )

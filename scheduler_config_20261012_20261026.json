@@ -1,7 +1,14 @@
 {
   "schedule_step_hours": 6.0,
   "transit_coverage_min": 0.35,
+
+  "prioritize_transit_bottom": true,
+  "transit_bottom_fraction": 0.75,
+  "require_transit_bottom_visibility": false,
+  "transit_bottom_visibility_min": 0.5,
+
   "min_visibility": 0.4,
+
   "transit_scheduling_weights": [
     0.8,
     0.0,
@@ -61,7 +68,7 @@
   "prioritise_occultations_by_slew": false,
 
   "generate_xml": true,
-  "include_occultation_sequences_in_xml": true,
+  "include_occultation_sequences_in_xml": false,
 
   "obs_sequence_duration_min": 90,
   "occ_sequence_limit_min": 45,
@@ -99,7 +106,7 @@
 
     "visibility_gmat": "/Users/vkostov/Documents/GitHub/pandora-scheduler/gmat/PAN-GMAT-SCI-20261005-VF20261005-EX20270405.txt",
     "write_all_targets_csv": false,
-    "too_list_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261012_20261026_EarthDay110/ToO_list.csv"
+    "too_list_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/test_20261012_20261026_transit_depth/ToO_list.csv"
   },
   "primary_visit_start_policy": "centered",
   "notes": {

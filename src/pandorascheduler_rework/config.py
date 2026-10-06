@@ -75,6 +75,18 @@ class PandoraSchedulerConfig:
     transit_coverage_min: float = 0.2
     """Minimum transit coverage to schedule (0-1). Lower = more transits scheduled."""
 
+    prioritize_transit_bottom: bool = False
+    """Prefer candidates with higher visibility in the central 50% of transit."""
+
+    transit_bottom_fraction: float = 0.5
+    """Fraction of each transit centered on mid-transit for bottom scoring."""
+
+    require_transit_bottom_visibility: bool = False
+    """Require the configured transit-bottom visibility threshold for admission."""
+
+    transit_bottom_visibility_min: float = 0.5
+    """Minimum visible fraction of the configured transit-bottom interval."""
+
     min_visibility: float = 0.5
     """Minimum visibility fraction to consider observable (0–1).
 
@@ -558,6 +570,18 @@ class PandoraSchedulerConfig:
             raise ValueError(
                 "transit_coverage_min must be in [0, 1], got %s"
                 % (self.transit_coverage_min,)
+            )
+
+        if not 0.0 < self.transit_bottom_fraction <= 1.0:
+            raise ValueError(
+                "transit_bottom_fraction must be in (0, 1], got %s"
+                % (self.transit_bottom_fraction,)
+            )
+
+        if not 0.0 <= self.transit_bottom_visibility_min <= 1.0:
+            raise ValueError(
+                "transit_bottom_visibility_min must be in [0, 1], got %s"
+                % (self.transit_bottom_visibility_min,)
             )
 
         # Validate star tracker required count

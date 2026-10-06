@@ -83,6 +83,26 @@ class TestPandoraSchedulerConfig:
                 window_end=datetime(2027, 2, 5),
                 transit_coverage_min=1.5,
             )
+
+    def test_transit_bottom_visibility_defaults(self):
+        """Bottom visibility admission is opt-in with a 50% default threshold."""
+        config = PandoraSchedulerConfig(
+            window_start=datetime(2026, 2, 5),
+            window_end=datetime(2027, 2, 5),
+        )
+        assert config.require_transit_bottom_visibility is False
+        assert config.transit_bottom_visibility_min == 0.5
+
+    def test_transit_bottom_visibility_min_validation_fail(self):
+        """Bottom visibility threshold must be a fraction in [0, 1]."""
+        with pytest.raises(
+            ValueError, match="transit_bottom_visibility_min must be in"
+        ):
+            PandoraSchedulerConfig(
+                window_start=datetime(2026, 2, 5),
+                window_end=datetime(2027, 2, 5),
+                transit_bottom_visibility_min=1.1,
+            )
             
 # Legacy conversion tests removed
             
