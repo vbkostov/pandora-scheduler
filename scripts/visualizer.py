@@ -2708,6 +2708,7 @@ class ScheduleVisualizer:
                 pass
 
         visibility_cache: dict[str, Optional[pd.DataFrame]] = {}
+        transit_cache: dict[str, pd.DataFrame] = {}
 
         def _load_visibility(target_name: str) -> Optional[pd.DataFrame]:
             if target_name == "Free Time":
@@ -2763,6 +2764,90 @@ class ScheduleVisualizer:
 
             visibility_cache[target_name] = None
             return None
+
+        def _load_transits(target_name: str) -> pd.DataFrame:
+            """Load transit ingress/center/egress times for a target."""
+            if target_name in transit_cache:
+                return transit_cache[target_name]
+
+            candidates = [
+                data_dir / "targets" / target_name / f"Visibility for {target_name}.parquet",
+                data_dir / "aux_targets" / target_name / f"Visibility for {target_name}.parquet",
+            ]
+            star_name = planet_to_star.get(target_name)
+            if star_name:
+                candidates.extend(
+                    [
+                        data_dir / "targets" / star_name / target_name / f"Visibility for {target_name}.parquet",
+                        data_dir / "aux_targets" / star_name / target_name / f"Visibility for {target_name}.parquet",
+                    ]
+                )
+
+            # Some target names contain spaces or punctuation, so include a
+            # recursive fallback for the generated nested planet directories.
+            for base in (data_dir / "targets", data_dir / "aux_targets"):
+                if base.exists():
+                    candidates.extend(base.rglob(f"Visibility for {target_name}.parquet"))
+
+            empty = pd.DataFrame(columns=["start", "center", "stop"])
+            for candidate in dict.fromkeys(candidates):
+                if not candidate.exists():
+                    continue
+                try:
+                    transit_df = pd.read_parquet(
+                        candidate,
+                        columns=["Transit_Start_UTC", "Transit_Stop_UTC"],
+                    )
+                    starts = pd.to_datetime(
+                        transit_df["Transit_Start_UTC"], errors="coerce"
+                    )
+                    stops = pd.to_datetime(
+                        transit_df["Transit_Stop_UTC"], errors="coerce"
+                    )
+                except Exception:
+                    try:
+                        transit_df = pd.read_parquet(
+                            candidate,
+                            columns=["Transit_Start", "Transit_Stop"],
+                        )
+                        starts = pd.to_datetime(
+                            Time(
+                                transit_df["Transit_Start"].to_numpy(dtype=float),
+                                format="mjd",
+                                scale="utc",
+                            ).to_datetime()
+                        )
+                        stops = pd.to_datetime(
+                            Time(
+                                transit_df["Transit_Stop"].to_numpy(dtype=float),
+                                format="mjd",
+                                scale="utc",
+                            ).to_datetime()
+                        )
+                    except Exception:
+                        continue
+
+                if isinstance(starts, pd.DatetimeIndex):
+                    if starts.tz is not None:
+                        starts = starts.tz_localize(None)
+                elif starts.dt.tz is not None:
+                    starts = starts.dt.tz_localize(None)
+                if isinstance(stops, pd.DatetimeIndex):
+                    if stops.tz is not None:
+                        stops = stops.tz_localize(None)
+                elif stops.dt.tz is not None:
+                    stops = stops.dt.tz_localize(None)
+                result = pd.DataFrame({"start": starts, "stop": stops}).dropna()
+                if result.empty:
+                    continue
+                result["center"] = result["start"] + (
+                    result["stop"] - result["start"]
+                ) / 2
+                transit_cache[target_name] = result
+                return result
+
+            transit_cache[target_name] = empty
+            return empty
 
         rows = []
         missing_targets: set[str] = set()
@@ -2863,6 +2948,43 @@ class ScheduleVisualizer:
                 mid = start_num + dur_days / 2
                 ax.text(mid, y, seq.id, ha="center", va="center", fontsize=5, clip_on=True)
 
+        # Mark ingress, midpoint, and egress slightly beyond the sequence bar
+        # so the transit timing remains visible over priority/visibility fills.
+        transit_markers = []
+        for vid, seq, _ in rows:
+            transit_windows = _load_transits(seq.target)
+            if transit_windows.empty:
+                continue
+            sequence_start = pd.Timestamp(seq.start_time.datetime)
+            sequence_stop = pd.Timestamp(seq.stop_time.datetime)
+            y = seen[(vid, seq.target)]
+            for _, transit in transit_windows.iterrows():
+                if transit["stop"] < sequence_start or transit["start"] > sequence_stop:
+                    continue
+                transit_markers.extend(
+                    [
+                        (transit["start"], y, "start"),
+                        (transit["center"], y, "center"),
+                        (transit["stop"], y, "stop"),
+                    ]
+                )
+
+        marker_styles = {
+            "start": {"color": "black", "linewidth": 0.5, "linestyle": "--"},
+            "center": {"color": "black", "linewidth": 0.5, "linestyle": "--"},
+            "stop": {"color": "black", "linewidth": 0.5, "linestyle": "--"},
+        }
+        for marker_time, y, marker_kind in transit_markers:
+            style = marker_styles[marker_kind]
+            marker_num = float(mdates.date2num(marker_time.to_pydatetime()))
+            ax.vlines(
+                marker_num,
+                y - 0.96,
+                y + 0.96,
+                zorder=8,
+                **style,
+            )
+
         padding = (x_max - x_min) * 0.005 if x_max > x_min else 0.01
         ax.set_xlim(x_min - padding, x_max + padding)
         ax.set_yticks(range(len(y_labels)))
@@ -2898,6 +3020,20 @@ class ScheduleVisualizer:
             Patch(facecolor="black", label="Non-visible"),
             Patch(facecolor=free_time_color, label="Free Time"),
         ]
+        from matplotlib.lines import Line2D
+
+        if transit_markers:
+            legend_items.extend(
+                [
+                    Line2D(
+                        [0],
+                        [0],
+                        color="black",
+                        linewidth=0.7,
+                        label="Transit ingress/center/egress",
+                    ),
+                ]
+            )
         used_priorities = sorted(set(s.priority for _, s, _ in rows if s.target != "Free Time"))
         for p in used_priorities:
             c = priority_colors.get(p, "silver")

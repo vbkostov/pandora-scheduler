@@ -60,7 +60,7 @@
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
-  "generate_xml": false,
+  "generate_xml": true,
   "include_occultation_sequences_in_xml": true,
 
   "obs_sequence_duration_min": 90,
@@ -95,7 +95,7 @@
     ],
 
     "skip_manifests": false,
-    "generate_visibility": true,
+    "generate_visibility": false,
 
     "visibility_gmat": "/Users/vkostov/Documents/GitHub/pandora-scheduler/gmat/PAN-GMAT-SCI-20261005-VF20261005-EX20270405.txt",
     "write_all_targets_csv": false,
