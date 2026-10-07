@@ -998,7 +998,7 @@ def main() -> int:
             False,
         )
         transit_bottom_visibility_min = float(
-            _get_val("transit_bottom_visibility_min", None, 0.5)
+            _get_val("transit_bottom_visibility_min", None, 15.0)
         )
         min_vis = float(_get_val("min_visibility", args.min_visibility, 0.5))
 
@@ -1546,7 +1546,7 @@ def main() -> int:
             str(prioritize_transit_bottom).upper(),
         )
         logger.info(
-            "REQUIRE_TRANSIT_BOTTOM_VISIBILITY=%s (MIN=%.3f)",
+            "REQUIRE_TRANSIT_BOTTOM_VISIBILITY=%s (MIN_VISIBLE_MINUTES=%.1f)",
             str(require_transit_bottom_visibility).upper(),
             transit_bottom_visibility_min,
         )

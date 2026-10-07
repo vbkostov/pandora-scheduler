@@ -40,14 +40,14 @@ _PLACEHOLDER_MARKERS = {"SET_BY_TARGET_DEFINITION_FILE", "SET_BY_SCHEDULER"}
 _OBS_WINDOW_COLUMN = "Obs Window (hrs)"
 
 
-def transit_bottom_visibility_fraction(
+def transit_bottom_visibility_details(
     targets_dir: Path,
     star_name: str,
     transit_start: datetime,
     transit_stop: datetime,
     bottom_fraction: float,
-) -> Optional[float]:
-    """Return visible-minute fraction for the centered transit interval."""
+) -> Optional[tuple[float, int, int]]:
+    """Return fraction, visible minutes, and total minutes in the centered interval."""
     visibility_path = resolve_star_visibility_file(targets_dir, star_name)
     if visibility_path is None:
         return None
@@ -93,7 +93,29 @@ def transit_bottom_visibility_fraction(
     )
     center_grid = transit_grid[bottom_offset : bottom_offset + bottom_minutes]
     values = minute_visibility.reindex(center_grid, fill_value=False)
-    return float(values.to_numpy(dtype=bool).mean())
+    return (
+        float(values.to_numpy(dtype=bool).mean()),
+        int(values.to_numpy(dtype=bool).sum()),
+        bottom_minutes,
+    )
+
+
+def transit_bottom_visibility_fraction(
+    targets_dir: Path,
+    star_name: str,
+    transit_start: datetime,
+    transit_stop: datetime,
+    bottom_fraction: float,
+) -> Optional[float]:
+    """Return visible-minute fraction for the centered transit interval."""
+    details = transit_bottom_visibility_details(
+        targets_dir,
+        star_name,
+        transit_start,
+        transit_stop,
+        bottom_fraction,
+    )
+    return None if details is None else details[0]
 
 
 class TransitUnschedulableError(ValueError):
@@ -1168,7 +1190,7 @@ def check_if_transits_in_obs_window(
     prioritize_transit_bottom: bool = False,
     transit_bottom_fraction: float = 0.5,
     require_transit_bottom_visibility: bool = False,
-    transit_bottom_visibility_min: float = 0.5,
+    transit_bottom_visibility_min: float = 15.0,
     short_visit_threshold_hours: float = 12.0,
     short_visit_edge_buffer_hours: float = 1.5,
     long_visit_edge_buffer_hours: float = 4.0,
@@ -1271,6 +1293,7 @@ def check_if_transits_in_obs_window(
         # bottom-visibility requirement is evaluated before either metric is used
         # to filter candidate transits.
         bottom_coverage_values = coverage_values.copy()
+        bottom_visible_minutes = np.zeros(len(planet_data), dtype=float)
         bottom_visibility_available = np.zeros(len(planet_data), dtype=bool)
         if prioritize_transit_bottom or require_transit_bottom_visibility:
             star_visibility_cache: dict[str, Optional[pd.Series]] = {}
@@ -1324,7 +1347,7 @@ def check_if_transits_in_obs_window(
                 minute_visibility: Optional[pd.Series],
                 transit_start: datetime,
                 transit_stop: datetime,
-            ) -> Optional[float]:
+            ) -> Optional[tuple[float, int]]:
                 if minute_visibility is None:
                     return None
                 total_minutes = int(
@@ -1346,7 +1369,8 @@ def check_if_transits_in_obs_window(
                     bottom_offset : bottom_offset + bottom_minutes
                 ]
                 values = minute_visibility.reindex(center_grid, fill_value=False)
-                return float(values.to_numpy(dtype=bool).mean())
+                visible_values = values.to_numpy(dtype=bool)
+                return float(visible_values.mean()), int(visible_values.sum())
 
             star_name = str(planet_lookup.loc[planet_name, "Star Name"])
             minute_visibility = _load_star_visibility(star_name)
@@ -1357,14 +1381,15 @@ def check_if_transits_in_obs_window(
                     te.to_pydatetime(),
                 )
                 if bottom_coverage is not None:
-                    bottom_coverage_values[j] = bottom_coverage
+                    bottom_coverage_values[j] = bottom_coverage[0]
+                    bottom_visible_minutes[j] = bottom_coverage[1]
                     bottom_visibility_available[j] = True
 
         admission_mask = coverage_values >= transit_coverage_min
         if require_transit_bottom_visibility:
             admission_mask &= (
                 bottom_visibility_available
-                & (bottom_coverage_values >= transit_bottom_visibility_min)
+                & (bottom_visible_minutes >= transit_bottom_visibility_min)
             )
             if not bottom_visibility_available.any():
                 LOGGER.warning(
@@ -1384,6 +1409,7 @@ def check_if_transits_in_obs_window(
         coverage_values = coverage_values[admission_mask]
         saa_values = saa_values[admission_mask]
         bottom_coverage_values = bottom_coverage_values[admission_mask]
+        bottom_visible_minutes = bottom_visible_minutes[admission_mask]
 
         lifetime_mask = (pandora_start <= raw_start_series) & (
             raw_stop_series <= pandora_stop

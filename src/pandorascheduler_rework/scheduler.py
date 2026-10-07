@@ -521,7 +521,7 @@ def _initialize_tracker(
                 scale="utc",
             ).to_datetime()
             for transit_start, transit_stop in zip(start_transits, end_transits):
-                bottom_visibility = observation_utils.transit_bottom_visibility_fraction(
+                bottom_visibility = observation_utils.transit_bottom_visibility_details(
                     inputs.paths.targets_dir,
                     star_name,
                     transit_start,
@@ -530,7 +530,8 @@ def _initialize_tracker(
                 )
                 bottom_admission.append(
                     bottom_visibility is not None
-                    and bottom_visibility >= config.transit_bottom_visibility_min
+                    and bottom_visibility[1]
+                    >= config.transit_bottom_visibility_min
                 )
             planet_data = planet_data.loc[bottom_admission].reset_index(drop=True)
 

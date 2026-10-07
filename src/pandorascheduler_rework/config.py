@@ -84,8 +84,8 @@ class PandoraSchedulerConfig:
     require_transit_bottom_visibility: bool = False
     """Require the configured transit-bottom visibility threshold for admission."""
 
-    transit_bottom_visibility_min: float = 0.5
-    """Minimum visible fraction of the configured transit-bottom interval."""
+    transit_bottom_visibility_min: float = 15.0
+    """Minimum visible minutes in the configured transit-bottom interval."""
 
     min_visibility: float = 0.5
     """Minimum visibility fraction to consider observable (0–1).
@@ -578,9 +578,9 @@ class PandoraSchedulerConfig:
                 % (self.transit_bottom_fraction,)
             )
 
-        if not 0.0 <= self.transit_bottom_visibility_min <= 1.0:
+        if self.transit_bottom_visibility_min < 0.0:
             raise ValueError(
-                "transit_bottom_visibility_min must be in [0, 1], got %s"
+                "transit_bottom_visibility_min must be >= 0, got %s"
                 % (self.transit_bottom_visibility_min,)
             )
 
