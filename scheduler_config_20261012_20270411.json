@@ -1,7 +1,14 @@
 {
   "schedule_step_hours": 6.0,
   "transit_coverage_min": 0.35,
+
+  "prioritize_transit_bottom": true,
+  "transit_bottom_fraction": 0.75,
+  "require_transit_bottom_visibility": true,
+  "transit_bottom_visibility_min": 15.0,
+
   "min_visibility": 0.4,
+
   "transit_scheduling_weights": [
     0.8,
     0.0,
@@ -31,7 +38,7 @@
   "roll_step_deg": 5.0,
   "min_power_frac": 0.7,
 
-  "allow_science_startracker_gap_fill": true,
+  "allow_science_startracker_gap_fill": false,
   "science_startracker_gap_max_minutes": 15,
 
   "allow_occ_startracker_violation": true,
@@ -54,13 +61,13 @@
   "parallel_workers": 13,
   "write_run_config_manifest": true,
 
-  "exoplanet_only_mode": false,
+  "exoplanet_only_mode": true,
 
   "primary_only_mode": true,
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
-  "generate_xml": false,
+  "generate_xml": true,
   "include_occultation_sequences_in_xml": false,
 
   "obs_sequence_duration_min": 90,
@@ -95,11 +102,11 @@
     ],
 
     "skip_manifests": false,
-    "generate_visibility": false,
+    "generate_visibility": true,
 
-    "visibility_gmat": "/Users/vkostov/Documents/GitHub/pandora-scheduler/gmat/PAN-GMAT-COM-20260825-VF20260825-EX20270925.txt",
+    "visibility_gmat": "/Users/vkostov/Documents/GitHub/pandora-scheduler/gmat/PAN-GMAT-SCI-20261005-VF20261005-EX20270405.txt",
     "write_all_targets_csv": false,
-    "too_list_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20260907_20270406_EarthDay110_noST/ToO_list.csv"
+    "too_list_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261012_20270411_EarthDay110/ToO_list.csv"
   },
   "primary_visit_start_policy": "centered",
   "notes": {
