@@ -238,8 +238,18 @@ def _apply_priority(
                 f"Target '{filename}' not present in {category} priority table"
             )
         row["Priority"] = float(match["priority"].iloc[0])
+        if "transits_rem" not in match.columns:
+            raise TargetDefinitionError(
+                f"Priority table for category '{category}' is missing required "
+                "'transits_rem' column"
+            )
+        remaining_transits = match["transits_rem"].iloc[0]
+        if pd.isna(remaining_transits):
+            raise TargetDefinitionError(
+                f"Target '{filename}' in {category} has missing 'transits_rem' value"
+            )
         row["Number of Transits to Capture"] = int(
-            round(float(match["transits_req"].iloc[0]))
+            round(float(remaining_transits))
         )
     elif category in _STANDARD_CATEGORIES:
         if priority_table is None:

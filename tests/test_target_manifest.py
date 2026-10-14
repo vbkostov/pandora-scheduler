@@ -85,6 +85,26 @@ def test_manifest_matches_legacy(category: str, monkeypatch: pytest.MonkeyPatch)
 
     assert isinstance(legacy_df, pd.DataFrame)
     assert isinstance(rework_df, pd.DataFrame)
+    sort_key = "Original Filename" if "Original Filename" in legacy_df.columns else "Star Name"
+
+    # For exoplanets, rework intentionally uses the remaining-transits field
+    # instead of the legacy requested-transits field.
+    if category in {
+        "exoplanet",
+        "primary-exoplanet",
+        "secondary-exoplanet",
+        "auxiliary-exoplanet",
+    }:
+        assert set(legacy_df.columns) == set(rework_df.columns)
+        common_cols = [
+            col for col in legacy_df.columns if col != "Number of Transits to Capture"
+        ]
+        rework_sorted = rework_df.sort_values(by=sort_key).reset_index(drop=True)
+        legacy_sorted = legacy_df.sort_values(by=sort_key).reset_index(drop=True)
+        pd.testing.assert_frame_equal(
+            rework_sorted[common_cols], legacy_sorted[common_cols]
+        )
+        return
 
     # For occultation-standard, rework intentionally adds "Number of Hours Requested"
     # which was missing in legacy code (bug fix - the priority table has hours_req)
@@ -98,7 +118,6 @@ def test_manifest_matches_legacy(category: str, monkeypatch: pytest.MonkeyPatch)
         assert set(legacy_df.columns) == set(rework_df.columns)
         rework_df = rework_df[legacy_df.columns]
 
-    sort_key = "Original Filename" if "Original Filename" in legacy_df.columns else "Star Name"
     legacy_sorted = legacy_df.sort_values(by=sort_key).reset_index(drop=True)
     rework_sorted = rework_df.sort_values(by=sort_key).reset_index(drop=True)
 
@@ -173,4 +192,42 @@ class TestManifestStrictValidation:
         
         assert "Number of Hours Requested" in row
         assert row["Number of Hours Requested"] == 100
+
+    def test_exoplanet_uses_remaining_transits(self):
+        from pandorascheduler_rework.targets.manifest import _apply_priority
+
+        priority_df = pd.DataFrame(
+            {
+                "rank": [1],
+                "target": ["test_planet"],
+                "priority": [0.9],
+                "transits_req": [10],
+                "transits_obs": [4],
+                "transits_rem": [6],
+            }
+        )
+        row = {"Original Filename": "test_planet"}
+
+        _apply_priority(row, "exoplanet", priority_df)
+
+        assert row["Number of Transits to Capture"] == 6
+
+    def test_exoplanet_requires_remaining_transits(self):
+        from pandorascheduler_rework.targets.manifest import (
+            TargetDefinitionError,
+            _apply_priority,
+        )
+
+        priority_df = pd.DataFrame(
+            {
+                "rank": [1],
+                "target": ["test_planet"],
+                "priority": [0.9],
+                "transits_req": [10],
+            }
+        )
+        row = {"Original Filename": "test_planet"}
+
+        with pytest.raises(TargetDefinitionError, match="transits_rem"):
+            _apply_priority(row, "exoplanet", priority_df)
 
