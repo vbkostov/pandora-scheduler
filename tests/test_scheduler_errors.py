@@ -4,7 +4,7 @@ These tests verify that the scheduler handles error conditions gracefully
 and provides helpful error messages when things go wrong.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pandas as pd
@@ -129,6 +129,76 @@ class TestSchedulerErrorHandling:
         assert too_df.iloc[-1]["Observation Stop"] == obs_stop
         assert too_df.iloc[-1]["Comments"] == "ToO"
         assert new_start == obs_stop
+
+    def test_too_in_final_partial_step_is_detected(self, tmp_path):
+        config = PandoraSchedulerConfig(
+            window_start=datetime(2026, 7, 1),
+            window_end=datetime(2026, 7, 1, 5),
+            schedule_step=timedelta(hours=6),
+            output_dir=tmp_path,
+            show_progress=False,
+        )
+        (tmp_path / "ToO_list.csv").write_text(
+            "Target,Obs Window Start,Obs Window Stop\n"
+            "Final ToO,2026-07-01 04:00:00,2026-07-01 05:00:00\n",
+            encoding="utf-8",
+        )
+        inputs = SchedulerInputs(
+            pandora_start=config.window_start,
+            pandora_stop=config.window_end,
+            sched_start=config.window_start,
+            sched_stop=config.window_end,
+            target_list=pd.DataFrame(),
+            paths=SchedulerPaths.from_package_root(tmp_path),
+            target_definition_files=[],
+            primary_target_csv=tmp_path / "primary.csv",
+            auxiliary_target_csv=tmp_path / "aux.csv",
+            occultation_target_csv=tmp_path / "occ.csv",
+            output_dir=tmp_path,
+        )
+
+        with patch(
+            "pandorascheduler_rework.scheduler._initialize_tracker",
+            return_value=pd.DataFrame(
+                columns=[
+                    "Planet Name",
+                    "Primary Target",
+                    "RA",
+                    "DEC",
+                    "Transits Needed",
+                    "Transits Acquired",
+                    "Transits Left in Lifetime",
+                    "Transits Left in Schedule",
+                    "Transit Priority",
+                ]
+            ),
+        ), patch(
+            "pandorascheduler_rework.scheduler._load_planet_transit_windows",
+            return_value={},
+        ), patch(
+            "pandorascheduler_rework.scheduler.observation_utils.check_if_transits_in_obs_window",
+            return_value=pd.DataFrame(),
+        ), patch(
+            "pandorascheduler_rework.scheduler._lookup_too_schedule_fields",
+            return_value={
+                "RA": 1.0,
+                "DEC": 2.0,
+                "Transit Coverage": 0.5,
+                "SAA Overlap": 0.1,
+                "Schedule Factor": 1.0,
+                "Quality Factor": 0.6,
+            },
+        ), patch(
+            "pandorascheduler_rework.scheduler._schedule_pre_too_gap",
+            return_value=pd.DataFrame(),
+        ):
+            outputs = run_scheduler(inputs, config)
+
+        too_rows = outputs.schedule.loc[outputs.schedule["Comments"] == "ToO"]
+        assert len(too_rows) == 1
+        assert too_rows.iloc[0]["Target"] == "Final ToO"
+        assert too_rows.iloc[0]["Observation Start"] == datetime(2026, 7, 1, 4)
+        assert too_rows.iloc[0]["Observation Stop"] == datetime(2026, 7, 1, 5)
 
     def test_persist_outputs_keeps_full_midnight_timestamps(self, tmp_path):
         config = PandoraSchedulerConfig(

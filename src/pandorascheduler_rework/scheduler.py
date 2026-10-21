@@ -257,7 +257,10 @@ def run_scheduler(
     all_planet_names = state.tracker["Planet Name"].dropna().unique()
     transit_windows = _load_planet_transit_windows(pd.Index(all_planet_names), inputs)
 
-    while stop <= sched_stop:
+    while start < sched_stop:
+        # Process the final partial scheduling interval instead of dropping it
+        # when a full step would extend beyond the requested scheduling window.
+        stop = min(start + config.schedule_step, sched_stop)
         state.tracker = state.tracker.sort_values(
             by=["Primary Target", "Transit Priority"],
             ascending=[False, True],
