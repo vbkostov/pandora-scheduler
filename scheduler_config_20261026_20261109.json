@@ -68,7 +68,7 @@
   "prioritise_occultations_by_slew": false,
 
   "generate_xml": true,
-  "include_occultation_sequences_in_xml": false,
+  "include_occultation_sequences_in_xml": true,
 
   "obs_sequence_duration_min": 90,
   "occ_sequence_limit_min": 45,
