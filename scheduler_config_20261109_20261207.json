@@ -64,8 +64,9 @@
   "prioritise_occultations_by_slew": false,
 
   "generate_xml": true,
-  "include_occultation_sequences_in_xml": false,
-  "occultation_windows_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261109_20261207/occultation_windows.csv",
+  "include_occultation_sequences_in_xml": true,
+  
+  "occultation_windows_csv": null,
 
   "obs_sequence_duration_min": 90,
   "occ_sequence_limit_min": 45,
@@ -75,7 +76,7 @@
   "break_occultation_sequences": true,
 
   "only_occultation_pass1": true,
-  "enable_occultation_pass1": true,
+  "enable_occultation_pass1": false,
   "requested_occ_time_override": true,
 
   "try_catalog_fallback": false,
@@ -109,6 +110,7 @@
   "notes": {
     "visibility_backend": "local == visibility from GMAT; pandoravisibility == visibility from pandora-visibility",
     "primary_visit_start_policy": "earliest = default behavior; centered = midpoint of feasible visit-start window; latest = last feasible minute",
-    "occultation_windows_csv": "HD_29037 is eligible only from 2026-11-20 17:00:00 through 2026-11-21 17:00:00 UTC"
+    "occultation_windows_csv": "HD_29037 is eligible only from 2026-11-20 17:00:00 through 2026-11-21 17:00:00 UTC",
+    "disabled_occultation_windows_csv_path": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261109_20261207/occultation_windows.csv"
   }
 }
