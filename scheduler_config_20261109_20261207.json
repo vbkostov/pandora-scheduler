@@ -66,7 +66,7 @@
   "generate_xml": true,
   "include_occultation_sequences_in_xml": true,
   
-  "occultation_windows_csv": null,
+  "occultation_windows_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261109_20261207/occultation_windows.csv",
 
   "obs_sequence_duration_min": 90,
   "occ_sequence_limit_min": 45,
