@@ -196,6 +196,13 @@ def build_schedule(config: PandoraSchedulerConfig) -> SchedulerResult:
             target_definition_base,
         )
 
+    if config.occultation_windows_csv is not None and target_definition_base is not None:
+        _append_windowed_occultation_targets(
+            occultation_target_csv,
+            config.occultation_windows_csv,
+            target_definition_base,
+        )
+
     if config.targets_manifest and not config.targets_manifest.exists():
         raise FileNotFoundError(
             f"Provided targets_manifest not found: {config.targets_manifest}"
@@ -600,6 +607,97 @@ def _append_time_critical_too_targets(
     )
 
 
+
+
+def _append_windowed_occultation_targets(
+    occultation_target_csv: Path,
+    windows_csv: Path,
+    target_definition_base: Path,
+) -> None:
+    """Add one-off occultation targets to the run-local occultation catalog."""
+    windows = pd.read_csv(windows_csv, skipinitialspace=True)
+    required = {"Target", "Obs Window Start", "Obs Window Stop"}
+    missing = required.difference(windows.columns)
+    if missing:
+        raise ValueError(
+            f"Occultation windows CSV {windows_csv} is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    starts = pd.to_datetime(windows["Obs Window Start"], errors="coerce", utc=True)
+    stops = pd.to_datetime(windows["Obs Window Stop"], errors="coerce", utc=True)
+    if starts.isna().any() or stops.isna().any():
+        raise ValueError(
+            f"Occultation windows CSV {windows_csv} contains invalid timestamps"
+        )
+    if (stops <= starts).any():
+        raise ValueError(
+            f"Occultation windows CSV {windows_csv} contains non-positive windows"
+        )
+
+    requested_hours = (
+        pd.DataFrame(
+            {
+                "Target": windows["Target"].astype(str).str.strip(),
+                "hours": (stops - starts).dt.total_seconds() / 3600.0,
+            }
+        )
+        .groupby("Target")["hours"]
+        .sum()
+    )
+    requested_targets = set(requested_hours.index)
+
+    occultation = (
+        pd.read_csv(occultation_target_csv)
+        if occultation_target_csv.exists()
+        else pd.DataFrame()
+    )
+    known_targets = set(
+        occultation.get("Star Name", pd.Series(dtype=object))
+        .dropna()
+        .astype(str)
+    )
+    missing_targets = sorted(requested_targets - known_targets)
+    if not missing_targets:
+        return
+
+    time_critical_dir = target_definition_base / "time-critical"
+    if not time_critical_dir.is_dir():
+        raise FileNotFoundError(
+            "Windowed occultation targets are missing from the occultation "
+            f"catalog, and time-critical definitions are unavailable: {time_critical_dir}"
+        )
+
+    time_critical = rework_helper.process_target_files(
+        "time-critical",
+        base_path=target_definition_base,
+    )
+    fallback = time_critical.loc[
+        time_critical["Star Name"].astype(str).isin(missing_targets)
+    ].copy()
+    found_targets = set(fallback["Star Name"].astype(str))
+    unresolved = sorted(requested_targets - known_targets - found_targets)
+    if unresolved:
+        raise ValueError(
+            "Occultation windows reference targets that are neither in the "
+            "occultation catalog nor time-critical definitions: "
+            + ", ".join(unresolved)
+        )
+
+    fallback["Priority"] = 1.0
+    fallback["Number of Hours Requested"] = [
+        float(requested_hours[str(target)])
+        for target in fallback["Star Name"].astype(str)
+    ]
+    combined = pd.concat([occultation, fallback], ignore_index=True, sort=False)
+    occultation_target_csv.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(occultation_target_csv, index=False)
+    LOGGER.info(
+        "Added %d run-only windowed occultation target(s) to %s: %s",
+        len(fallback),
+        occultation_target_csv,
+        ", ".join(sorted(found_targets)),
+    )
 
 
 def _coerce_path(value: object, default: Path) -> Path:

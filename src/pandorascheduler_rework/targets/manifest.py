@@ -289,9 +289,14 @@ def _apply_identity_columns(row: MutableMapping[str, object], category: str) -> 
         else:
             row["Planet Simbad Name"] = planet_name_raw
         row["Star Simbad Name"] = star_name
-        if "Transit Epoch (BJD_TDB)" in row:
+        transit_epoch = row.get("Transit Epoch (BJD_TDB)")
+        if (
+            transit_epoch is not None
+            and not pd.isna(transit_epoch)
+            and str(transit_epoch).strip()
+        ):
             row["Transit Epoch (BJD_TDB-2400000.5)"] = (
-                float(row["Transit Epoch (BJD_TDB)"]) - 2400000.5
+                float(transit_epoch) - 2400000.5
             )
     elif category in _STANDARD_CATEGORIES:
         row["Planet Name"] = ""

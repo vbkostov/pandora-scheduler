@@ -363,6 +363,52 @@ Notes:
   `exoplanet_targets.csv`.
 - On rerun, the configured source file overwrites `output_*/ToO_list.csv`.
 
+## Occultation-Specific Windows
+
+Occultation targets can optionally be restricted to explicit UTC windows. This
+is separate from `ToO_list.csv`: the target must already be present in the
+`occultation-standard` manifest, and the window file identifies targets by
+their exact `Star Name`.
+
+Add this to the scheduler JSON:
+
+```json
+{
+  "occultation_windows_csv": "/absolute/path/to/occultation_windows.csv"
+}
+```
+
+The CSV must contain:
+
+```csv
+Target,Obs Window Start,Obs Window Stop
+HD_29037,2026-11-20 17:00:00,2026-11-21 17:00:00
+```
+
+When configured, the calendar builder splits occultation gaps at the window
+boundaries and allows a windowed target to be assigned only inside its own
+windows. Targets absent from the file retain the existing unrestricted
+occultation behavior. During a full pipeline run, a target absent from the
+occultation manifest is loaded from the `time-critical` TDF directory and
+appended only to that run's generated occultation manifest; no permanent
+`occultation-standard_priorities.csv` row is required. For XML-only runs, the
+target must already be present in the selected run manifest. Invalid timestamps
+or unresolved targets fail fast.
+
+The same file can be supplied on the command line:
+
+```bash
+.venv/bin/python run_scheduler.py \
+  --start "2026-11-09 00:00:00" \
+  --end "2026-12-07 00:00:00" \
+  --output output_20261109_20261207 \
+  --config scheduler_config_20261109_20261207.json \
+  --occultation-windows-csv output_20261109_20261207/occultation_windows.csv
+```
+
+Set `include_occultation_sequences_in_xml` to `true` if the constrained
+occultation assignments should be emitted in the XML calendar.
+
 ## Experimental 10 HJs + ToOs Wrapper
 
 This is separate from the main `run_scheduler.py` pipeline.

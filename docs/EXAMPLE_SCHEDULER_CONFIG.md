@@ -21,6 +21,7 @@ Timing & window
 
 Paths & data sources
 - `extra_inputs.target_definition_base` (string): path to PandoraTargetList target definition files (example: `/path/to/PandoraTargetList/target_definition_files`).
+- `occultation_windows_csv` (string, optional): UTC CSV restricting named occultation targets to specific windows. The CSV columns are `Target`, `Obs Window Start`, and `Obs Window Stop`; `Target` must match `Star Name` in `occultation-standard_targets.csv`. It can also be supplied as `extra_inputs.occultation_windows_csv` or with `--occultation-windows-csv`.
 - `extra_inputs.visibility_gmat` (string): path to GMAT ephemeris file used to generate visibilities (can also be provided via CLI `--gmat-ephemeris`).
 - `visibility_backend` (string, default `"local"`): visibility engine. Use
   `"pandoravisibility"` to propagate a configured TLE with the optional
@@ -74,6 +75,7 @@ XML generation parameters
 - `priority_buffer` / `buffer` (bool, default `false`): when enabled, XML priority tagging expands the transit window before assigning sequence priority. This does not change scheduling, only whether a science XML sequence is marked priority `2` instead of `1`.
 - `priority_buffer_minutes` / `buffer_minutes` (int, default `80`): symmetric number of minutes added before transit start and after transit end when `priority_buffer` is enabled.
 - `break_occultation_sequences` (bool, default `true`): whether to break long occultation sequences into chunks.
+- `occultation_windows_csv` (string, optional): when set, the calendar builder splits occultation gaps at the configured window boundaries and only assigns a listed target inside its own windows. During a full pipeline run, missing windowed targets are loaded from `time-critical` into the run-local occultation manifest; no permanent priority-table entry is required. XML-only runs require the target to already be present in the selected manifest.
 
 Standard star observations
 - `std_obs_duration_hours` (float, default `0.5`)

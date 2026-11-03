@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, cast
+from typing import Dict, List, Mapping, Optional, Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -354,6 +354,7 @@ def schedule_occultation_targets(
     occultation_nonvisible_tolerance_minutes: int = 3,
     sun_avoidance_deg: float = 91.0,
     visit_label: str = "",
+    target_windows: Optional[Mapping[str, Sequence[tuple[float, float]]]] = None,
 ):
     starts_array = np.asarray(starts, dtype=float)
     stops_array = np.asarray(stops, dtype=float)
@@ -394,6 +395,34 @@ def schedule_occultation_targets(
         description = "Searching for occultation target from %s" % (try_occ_targets,)
     visit_prefix = f"{visit_label}: " if visit_label else ""
 
+    def _target_window_allows(name: str, start: float, stop: float) -> bool:
+        """Return whether an interval is contained in a configured target window."""
+        if not target_windows:
+            return True
+        windows = target_windows.get(str(name))
+        if not windows:
+            return True
+        tolerance = 1.0e-9
+        return any(
+            start >= window_start - tolerance
+            and stop <= window_stop + tolerance
+            for window_start, window_stop in windows
+        )
+
+    def _interval_mask_for_target(
+        name: str,
+        vis_times: np.ndarray,
+        start: float,
+        stop: float,
+    ) -> np.ndarray:
+        mask = (vis_times >= start) & (vis_times <= stop)
+        available_windowed_targets = _available_windowed_targets(start, stop)
+        if available_windowed_targets and name not in available_windowed_targets:
+            return np.zeros(mask.shape, dtype=bool)
+        if not _target_window_allows(name, start, stop):
+            return np.zeros(mask.shape, dtype=bool)
+        return mask
+
     base_path = Path(path) if path is not None else None
 
     # Cache visibility data to avoid re-reading files in the second pass
@@ -416,6 +445,28 @@ def schedule_occultation_targets(
             return None
         visibility_cache[name] = data
         return data
+
+    def _available_windowed_targets(start: float, stop: float) -> set[str]:
+        """Return windowed targets acceptable for this occultation interval."""
+        available: set[str] = set()
+        for name in target_windows or {}:
+            if not _target_window_allows(name, start, stop):
+                continue
+            vis_data = _get_visibility(name)
+            if vis_data is None:
+                continue
+            vis_times, visibility = vis_data
+            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            if interval_mask.sum() == 0:
+                continue
+            acceptable, _ = _interval_acceptable(
+                name,
+                visibility,
+                interval_mask,
+            )
+            if acceptable:
+                available.add(name)
+        return available
 
     def _get_detailed_visibility(name: str) -> Optional[pd.DataFrame]:
         if name in detailed_visibility_cache:
@@ -579,6 +630,7 @@ def schedule_occultation_targets(
     best_pass1_only_fraction = -1.0
     best_pass1_only_runs: list[list[tuple[datetime, datetime, bool]]] = []
     best_pass1_only_match: Optional[pd.Series] = None
+    best_pass1_only_windowed = False
     total_interval_duration = float(
         np.maximum(stops_array - starts_array, 0.0).sum()
     )
@@ -603,7 +655,9 @@ def schedule_occultation_targets(
             visible_duration = 0.0
             candidate_runs: list[list[tuple[datetime, datetime, bool]]] = []
         for start, stop in zip(starts_array, stops_array):
-            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            interval_mask = _interval_mask_for_target(
+                str(v_name), vis_times, start, stop
+            )
             if stop > start and interval_mask.sum() > 0:
                 has_nonzero_interval_samples = True
             if only_pass1:
@@ -636,10 +690,25 @@ def schedule_occultation_targets(
 
         if only_pass1 and total_interval_duration > 0.0:
             visible_fraction = visible_duration / total_interval_duration
-            if visible_fraction > best_pass1_only_fraction + 1e-12:
+            is_windowed_candidate = (
+                str(v_name) in (target_windows or {}) and visible_duration > 0.0
+            )
+            should_replace = False
+            if is_windowed_candidate:
+                should_replace = (
+                    not best_pass1_only_windowed
+                    or visible_fraction > best_pass1_only_fraction + 1e-12
+                )
+            elif not best_pass1_only_windowed:
+                should_replace = (
+                    best_pass1_only_name is None
+                    or visible_fraction > best_pass1_only_fraction + 1e-12
+                )
+            if should_replace:
                 best_pass1_only_fraction = visible_fraction
                 best_pass1_only_name = str(v_name)
                 best_pass1_only_runs = candidate_runs
+                best_pass1_only_windowed = is_windowed_candidate
                 match = o_list.loc[o_list["Star Name"] == v_name]
                 best_pass1_only_match = match.iloc[0] if not match.empty else None
 
@@ -713,7 +782,9 @@ def schedule_occultation_targets(
         for start, stop in zip(starts_array, stops_array):
             if stop <= start:
                 continue
-            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            interval_mask = _interval_mask_for_target(
+                str(v_name), vis_times, start, stop
+            )
             if interval_mask.sum() > 0:
                 has_nonzero_interval_samples = True
                 break
@@ -728,7 +799,9 @@ def schedule_occultation_targets(
         for idx in remaining_indices_p2:
             start = starts_array[idx]
             stop = stops_array[idx]
-            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            interval_mask = _interval_mask_for_target(
+                str(v_name), vis_times, start, stop
+            )
             nonvisible = _interval_nonvisible_count(visibility, interval_mask)
 
             # Guard: empty mask means no visibility data for this interval.
@@ -832,7 +905,9 @@ def schedule_occultation_targets(
             if vis is None:
                 continue
             vis_times, visibility = vis
-            interval_mask = (vis_times >= start) & (vis_times <= stop)
+            interval_mask = _interval_mask_for_target(
+                str(v_name), vis_times, start, stop
+            )
             if interval_mask.sum() == 0:
                 continue
             coverage_fraction = float((visibility[interval_mask] == 1).sum()) / float(
@@ -922,6 +997,14 @@ def schedule_occultation_targets(
             if vis is None:
                 continue
             vis_times, vis_flags = vis
+            available_windowed_targets = _available_windowed_targets(start, stop)
+            if (
+                available_windowed_targets
+                and str(v_name) not in available_windowed_targets
+            ):
+                continue
+            if not _target_window_allows(str(v_name), start, stop):
+                continue
             if vis_times.size == 0:
                 continue
             vis_min_idx = np.round(vis_times * minute_scale).astype(int)

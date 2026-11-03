@@ -65,6 +65,14 @@ class PandoraSchedulerConfig:
     visibility_tle_line2: Optional[str] = None
     """Optional inline TLE line 2 (used with ``visibility_tle_line1``)."""
 
+    occultation_windows_csv: Optional[Path] = None
+    """Optional CSV defining time windows for occultation targets.
+
+    The CSV must contain ``Target``, ``Obs Window Start``, and
+    ``Obs Window Stop`` columns.  Targets absent from the file retain the
+    existing unrestricted occultation behavior.
+    """
+
     output_dir: Optional[Path] = None
     """Output directory for generated files."""
 

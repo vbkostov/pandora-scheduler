@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from numbers import Number
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from xml.dom import minidom
 
 import numpy as np
@@ -162,6 +162,31 @@ class _ScienceCalendarBuilder:
             )
         else:
             self.occ_catalog = pd.DataFrame()
+
+        self.occultation_windows = _load_occultation_windows(
+            config.occultation_windows_csv
+        )
+        catalog_targets = set(
+            self.occ_catalog.get(
+                "Star Name", pd.Series(dtype=object)
+            ).dropna().astype(str)
+        )
+        unknown_window_targets = sorted(
+            set(self.occultation_windows).difference(catalog_targets)
+        )
+        if unknown_window_targets:
+            raise ValueError(
+                "Occultation windows reference targets missing from "
+                "occultation-standard_targets.csv: "
+                + ", ".join(unknown_window_targets)
+            )
+        self.occultation_windows_mjd = {
+            target: [
+                (float(Time(start).mjd), float(Time(stop).mjd))
+                for start, stop in windows
+            ]
+            for target, windows in self.occultation_windows.items()
+        }
 
         obs_minutes, occ_minutes = observation_utils.general_parameters(
             config.obs_sequence_duration_min,
@@ -418,6 +443,53 @@ class _ScienceCalendarBuilder:
         prepared = self._prepared_visibility_series(vis_df)
         self._occ_visibility_series_cache[target_name] = prepared
         return prepared
+
+    def _occultation_target_allowed(
+        self,
+        target_name: str,
+        segment_start: datetime,
+        segment_stop: datetime,
+    ) -> bool:
+        """Return whether a target may cover the complete segment."""
+        windows = self.occultation_windows.get(str(target_name))
+        if not windows:
+            return True
+        return any(
+            segment_start >= window_start
+            and segment_stop <= window_stop
+            for window_start, window_stop in windows
+        )
+
+    def _split_occultation_intervals_at_window_boundaries(
+        self,
+        starts: Sequence[datetime],
+        stops: Sequence[datetime],
+    ) -> tuple[List[datetime], List[datetime]]:
+        """Split intervals so windowed assignments cannot cross a boundary."""
+        if not self.occultation_windows:
+            return list(starts), list(stops)
+
+        boundaries = sorted(
+            {
+                boundary
+                for windows in self.occultation_windows.values()
+                for window_start, window_stop in windows
+                for boundary in (window_start, window_stop)
+            }
+        )
+        split_starts: List[datetime] = []
+        split_stops: List[datetime] = []
+        for start, stop in zip(starts, stops):
+            if stop <= start:
+                continue
+            cuts = [
+                start,
+                *[boundary for boundary in boundaries if start < boundary < stop],
+                stop,
+            ]
+            split_starts.extend(cuts[:-1])
+            split_stops.extend(cuts[1:])
+        return split_starts, split_stops
 
     @staticmethod
     def _combined_minute_index(
@@ -2628,14 +2700,56 @@ class _ScienceCalendarBuilder:
                                     occultation_pass="Pass 1 only",
                                 )
                             else:
-                                seq_counter = self._emit_free_time_sequence(
-                                    visit_element,
-                                    visit_id,
-                                    seq_counter,
-                                    run_start,
-                                    run_stop,
-                                    assignment_source="pass1_only_uncovered",
+                                # A configured one-off occultation target is not
+                                # a replacement for the regular occultation
+                                # program outside the minutes it can cover.
+                                # In particular, do not turn these gaps into
+                                # Free Time merely because Pass 1 selected the
+                                # one-off target for another part of the visit.
+                                fallback_occultation = (
+                                    self._select_fallback_occultation_target(
+                                        ra_value,
+                                        dec_value,
+                                        seg_start=run_start,
+                                        seg_stop=run_stop,
+                                        excluded_targets=set(self.occultation_windows),
+                                    )
+                                    if self.occultation_windows
+                                    and pass1_only_visit_target.target
+                                    in self.occultation_windows
+                                    else None
                                 )
+                                if fallback_occultation is not None:
+                                    (
+                                        occ_target,
+                                        ra_occ,
+                                        dec_occ,
+                                        occ_info,
+                                    ) = fallback_occultation
+                                    seq_counter = self._emit_occultation_sequences(
+                                        visit_element,
+                                        visit_id,
+                                        seq_counter,
+                                        occ_target,
+                                        run_start,
+                                        run_stop,
+                                        ra_occ,
+                                        dec_occ,
+                                        occ_info,
+                                        reference_ra=ra_value,
+                                        reference_dec=dec_value,
+                                        assignment_source="pass1_only_regular_fallback",
+                                        occultation_pass="regular fallback",
+                                    )
+                                else:
+                                    seq_counter = self._emit_free_time_sequence(
+                                        visit_element,
+                                        visit_id,
+                                        seq_counter,
+                                        run_start,
+                                        run_stop,
+                                        assignment_source="pass1_only_uncovered",
+                                    )
                     else:
                         # Select per-segment so the visibility check uses the
                         # actual occultation-gap times — a target visible in one gap
@@ -2849,6 +2963,9 @@ class _ScienceCalendarBuilder:
           is not visible (0.0 when fully visible, >0 for ST-only violations).
           Used to rank candidates: lower is better.
         """
+        if not self._occultation_target_allowed(star_name, seg_start, seg_stop):
+            return False, 1.0
+
         # Fast path: fully visible → always acceptable.
         if self._is_target_visible_in_segment(star_name, seg_start, seg_stop):
             return True, 0.0
@@ -2964,6 +3081,7 @@ class _ScienceCalendarBuilder:
         reference_dec: float,
         seg_start: Optional[datetime] = None,
         seg_stop: Optional[datetime] = None,
+        excluded_targets: Optional[set[str]] = None,
     ) -> Optional[tuple[str, float, float, Optional[pd.DataFrame]]]:
         if self.occ_catalog is None or self.occ_catalog.empty:
             return None
@@ -2977,8 +3095,16 @@ class _ScienceCalendarBuilder:
             name = str(row.get("Star Name", "")).strip()
             if not name:
                 continue
+            if excluded_targets and name in excluded_targets:
+                continue
             current_occ_time = self.occultation_obs_time.get(name, timedelta())
             if current_occ_time >= self._get_occultation_time_limit(name):
+                continue
+            if (
+                seg_start is not None
+                and seg_stop is not None
+                and not self._occultation_target_allowed(name, seg_start, seg_stop)
+            ):
                 continue
             # When segment times are provided, filter by visibility score
             # (respects allow_occ_startracker_violation).
@@ -3076,6 +3202,13 @@ class _ScienceCalendarBuilder:
         if not expanded_starts:
             return None
 
+        expanded_starts, expanded_stops = (
+            self._split_occultation_intervals_at_window_boundaries(
+                expanded_starts,
+                expanded_stops,
+            )
+        )
+
         candidates: List[Tuple[Path, str, Path]] = [
             (
                 self.data_dir / "occultation-standard_targets.csv",
@@ -3113,6 +3246,7 @@ class _ScienceCalendarBuilder:
                     occultation_nonvisible_tolerance_minutes=self.config.occultation_nonvisible_tolerance_minutes,
                     sun_avoidance_deg=self.config.sun_avoidance_deg,
                     visit_label=f"Visit {visit_id}" if visit_id else "",
+                    target_windows=self.occultation_windows_mjd,
                 )
                 if result_df is None:
                     continue
@@ -3154,6 +3288,58 @@ class _ScienceCalendarBuilder:
             self.config.requested_occ_time_override,
         )
         return None
+
+
+def _load_occultation_windows(
+    path: Optional[Path],
+) -> Dict[str, List[Tuple[datetime, datetime]]]:
+    """Load optional per-target occultation windows from a UTC CSV."""
+    if path is None:
+        return {}
+
+    window_path = Path(path)
+    if not window_path.exists():
+        raise FileNotFoundError(f"Occultation windows CSV missing: {window_path}")
+
+    table = pd.read_csv(window_path, skipinitialspace=True)
+    required = {"Target", "Obs Window Start", "Obs Window Stop"}
+    missing = required.difference(table.columns)
+    if missing:
+        raise ValueError(
+            f"Occultation windows CSV {window_path} is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    starts = pd.to_datetime(table["Obs Window Start"], errors="coerce", utc=True)
+    stops = pd.to_datetime(table["Obs Window Stop"], errors="coerce", utc=True)
+    bad_time = table.loc[starts.isna() | stops.isna()]
+    if not bad_time.empty:
+        raise ValueError(
+            f"Occultation windows CSV {window_path} contains invalid timestamps: "
+            + str(
+                bad_time[
+                    ["Target", "Obs Window Start", "Obs Window Stop"]
+                ].to_dict(orient="records")
+            )
+        )
+
+    windows: Dict[str, List[Tuple[datetime, datetime]]] = {}
+    for target, start, stop in zip(table["Target"], starts, stops):
+        target_name = str(target).strip()
+        start_dt = start.to_pydatetime().replace(tzinfo=None)
+        stop_dt = stop.to_pydatetime().replace(tzinfo=None)
+        if not target_name:
+            raise ValueError(f"Occultation windows CSV {window_path} has an empty Target")
+        if stop_dt <= start_dt:
+            raise ValueError(
+                f"Occultation window for {target_name!r} is not positive: "
+                f"{start_dt} to {stop_dt}"
+            )
+        windows.setdefault(target_name, []).append((start_dt, stop_dt))
+
+    for target_windows in windows.values():
+        target_windows.sort()
+    return windows
 
 
 def _read_catalog(path: Path) -> pd.DataFrame:
@@ -3678,6 +3864,7 @@ def _build_occultation_schedule(
     occultation_nonvisible_tolerance_minutes: int = 3,
     sun_avoidance_deg: float = 91.0,
     visit_label: str = "",
+    target_windows: Optional[Mapping[str, Sequence[tuple[float, float]]]] = None,
 ) -> tuple[Optional[pd.DataFrame], bool]:
     if not starts or not stops:
         return None, False
@@ -3763,6 +3950,7 @@ def _build_occultation_schedule(
         occultation_nonvisible_tolerance_minutes=occultation_nonvisible_tolerance_minutes,
         sun_avoidance_deg=sun_avoidance_deg,
         visit_label=visit_label,
+        target_windows=target_windows,
     )
     return occ_df, flag
 
