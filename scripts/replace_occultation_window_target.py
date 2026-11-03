@@ -22,6 +22,10 @@ from astropy.time import Time
 
 from pandorascheduler_rework.xml.builder import observation_sequence
 
+DEFAULT_WINDOWS_CSV = Path(
+    "/Users/vkostov/Documents/GitHub/pandora-scheduler/"
+    "output_20261109_20261207/occultation_windows.csv"
+)
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -46,6 +50,29 @@ def _nested_text(element: ET.Element, *names: str) -> str | None:
 def _parse_time(value: object) -> datetime:
     parsed = pd.to_datetime(value, utc=True, errors="raise")
     return parsed.to_pydatetime().replace(tzinfo=None)
+
+
+def _load_window_spec(path: Path) -> tuple[str, datetime, datetime]:
+    table = pd.read_csv(path, skipinitialspace=True)
+    required = {"Target", "Obs Window Start", "Obs Window Stop"}
+    missing = required.difference(table.columns)
+    if missing:
+        raise ValueError(
+            f"Window CSV is missing columns: {', '.join(sorted(missing))}"
+        )
+    if len(table) != 1:
+        raise ValueError(
+            f"Window CSV must contain exactly one row for this command; found {len(table)}"
+        )
+    row = table.iloc[0]
+    target = str(row["Target"]).strip()
+    start = _parse_time(row["Obs Window Start"])
+    stop = _parse_time(row["Obs Window Stop"])
+    if not target:
+        raise ValueError(f"Window CSV has an empty Target: {path}")
+    if stop <= start:
+        raise ValueError(f"Window CSV has a non-positive interval: {start} to {stop}")
+    return target, start, stop
 
 
 def _format_time(value: datetime) -> str:
@@ -311,20 +338,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xml", type=Path, required=True)
     parser.add_argument("--data-dir", type=Path, required=True)
-    parser.add_argument("--target-name", default="HD_29037")
+    parser.add_argument(
+        "--windows-csv",
+        type=Path,
+        default=DEFAULT_WINDOWS_CSV,
+        help=(
+            "CSV containing exactly one Target, Obs Window Start, and Obs Window Stop row. "
+            f"Default: {DEFAULT_WINDOWS_CSV}"
+        ),
+    )
     parser.add_argument("--target-definition-json", type=Path)
-    parser.add_argument("--start", required=True, help="UTC start, e.g. 2026-11-20 17:00:00")
-    parser.add_argument("--stop", required=True, help="UTC stop, e.g. 2026-11-21 17:00:00")
     parser.add_argument("--provenance", type=Path)
     parser.add_argument("--output-xml", type=Path)
     parser.add_argument("--output-provenance", type=Path)
     args = parser.parse_args()
 
+    target_name, window_start, window_stop = _load_window_spec(args.windows_csv)
     provenance = args.provenance or args.xml.with_name(
         f"{args.xml.stem}_sequence_provenance.csv"
     )
     output_xml = args.output_xml or args.xml.with_name(
-        f"{args.xml.stem}_{args.target_name}_window.xml"
+        f"{args.xml.stem}_{target_name}_window.xml"
     )
     output_provenance = args.output_provenance or output_xml.with_name(
         f"{output_xml.stem}_sequence_provenance.csv"
@@ -335,10 +369,10 @@ def main() -> int:
         output_xml,
         output_provenance,
         args.data_dir,
-        args.target_name,
+        target_name,
         args.target_definition_json,
-        _parse_time(args.start),
-        _parse_time(args.stop),
+        window_start,
+        window_stop,
     )
     print(f"Replaced {replacements} occultation sequence portion(s).")
     print(f"XML: {output_xml}")

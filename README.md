@@ -363,51 +363,52 @@ Notes:
   `exoplanet_targets.csv`.
 - On rerun, the configured source file overwrites `output_*/ToO_list.csv`.
 
-## Occultation-Specific Windows
+## One-Off Occultation Replacement
 
-Occultation targets can optionally be restricted to explicit UTC windows. This
-is separate from `ToO_list.csv`: the target must already be present in the
-`occultation-standard` manifest, and the window file identifies targets by
-their exact `Star Name`.
+The main scheduler does not apply one-off occultation windows. This avoids
+rebuilding the full occultation catalog and rescanning every target for every
+visit. Generate the normal calendar first, then replace eligible occultation
+blocks in the existing XML with the standalone post-processor:
 
-Add this to the scheduler JSON:
-
-```json
-{
-  "occultation_windows_csv": "/absolute/path/to/occultation_windows.csv"
-}
+```bash
+python3 scripts/replace_occultation_window_target.py \
+  --xml output_20261109_20261207/Pandora_science_calendar.xml \
+  --data-dir output_20261109_20261207/data_91_20_sc110_79_occ135_75 \
+  --target-definition-json \
+  /Users/vkostov/Documents/GitHub/PandoraTargetList/target_definition_files/time-critical/HD_29037_target_definition.json \
+  --output-xml output_20261109_20261207/Pandora_science_calendar_HD_29037_window.xml
 ```
 
-The CSV must contain:
+By default, the script reads this one-row CSV:
+
+```text
+output_20261109_20261207/occultation_windows.csv
+```
+
+The CSV must contain exactly one row with:
 
 ```csv
 Target,Obs Window Start,Obs Window Stop
 HD_29037,2026-11-20 17:00:00,2026-11-21 17:00:00
 ```
 
-When configured, the calendar builder splits occultation gaps at the window
-boundaries and allows a windowed target to be assigned only inside its own
-windows. Targets absent from the file retain the existing unrestricted
-occultation behavior. During a full pipeline run, a target absent from the
-occultation manifest is loaded from the `time-critical` TDF directory and
-appended only to that run's generated occultation manifest; no permanent
-`occultation-standard_priorities.csv` row is required. For XML-only runs, the
-target must already be present in the selected run manifest. Invalid timestamps
-or unresolved targets fail fast.
+Use `--windows-csv /path/to/occultation_windows.csv` for another file. The
+script checks the target's existing visibility parquet, changes only provenance
+marked occultation sequences, handles sequences crossing the window boundary,
+and writes a matching provenance CSV beside the new XML. Science and Free Time
+sequences are left unchanged. The original XML is never overwritten.
 
-The same file can be supplied on the command line:
+For visibility plots using the replacement calendar, pass the replacement
+provenance explicitly:
 
 ```bash
-.venv/bin/python run_scheduler.py \
-  --start "2026-11-09 00:00:00" \
-  --end "2026-12-07 00:00:00" \
-  --output output_20261109_20261207 \
-  --config scheduler_config_20261109_20261207.json \
-  --occultation-windows-csv output_20261109_20261207/occultation_windows.csv
+python3 scripts/visualizer.py \
+  output_20261109_20261207/Pandora_science_calendar_HD_29037_window.xml \
+  --mode visibility \
+  --data-dir output_20261109_20261207/data_91_20_sc110_79_occ135_75 \
+  --provenance output_20261109_20261207/Pandora_science_calendar_HD_29037_window_sequence_provenance.csv \
+  --out output_20261109_20261207/visualizer_HD_29037_visibility.png
 ```
-
-Set `include_occultation_sequences_in_xml` to `true` if the constrained
-occultation assignments should be emitted in the XML calendar.
 
 ## Experimental 10 HJs + ToOs Wrapper
 

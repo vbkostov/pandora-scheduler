@@ -196,15 +196,6 @@ def parse_args() -> argparse.Namespace:
             "xml_data_dir."
         ),
     )
-    parser.add_argument(
-        "--occultation-windows-csv",
-        type=Path,
-        help=(
-            "Optional CSV constraining occultation targets to specific UTC windows. "
-            "Also accepted as occultation_windows_csv in the JSON config."
-        ),
-    )
-
     # Visibility configuration (if generating)
     parser.add_argument(
         "--gmat-ephemeris",
@@ -913,24 +904,6 @@ def main() -> int:
             if raw_xml_data_dir is not None
             else None
         )
-        raw_occultation_windows_csv = (
-            args.occultation_windows_csv
-            if args.occultation_windows_csv is not None
-            else json_config.get(
-                "occultation_windows_csv",
-                extra_inputs.get("occultation_windows_csv"),
-            )
-        )
-        occultation_windows_csv = (
-            Path(str(raw_occultation_windows_csv)).expanduser().resolve()
-            if raw_occultation_windows_csv is not None
-            else None
-        )
-        if occultation_windows_csv is not None and not occultation_windows_csv.exists():
-            logger.error(
-                "Occultation windows CSV not found: %s", occultation_windows_csv
-            )
-            return 1
         if schedule_row_start is not None:
             schedule_row_start = int(schedule_row_start)
         if schedule_row_end is not None:
@@ -1059,9 +1032,6 @@ def main() -> int:
                     "occultation-standard",
                 ],
             )
-
-        if occultation_windows_csv is not None:
-            extra_inputs["occultation_windows_csv"] = occultation_windows_csv
 
         if exoplanet_only_mode:
             extra_inputs["target_definition_files"] = ["exoplanet"]
@@ -1441,7 +1411,6 @@ def main() -> int:
             visibility_tle_file=visibility_tle_file,
             visibility_tle_line1=visibility_tle_line1,
             visibility_tle_line2=visibility_tle_line2,
-            occultation_windows_csv=occultation_windows_csv,
             output_dir=output_dir,
             # Scheduling Thresholds
             transit_coverage_min=transit_cov,

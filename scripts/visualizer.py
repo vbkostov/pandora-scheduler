@@ -188,9 +188,14 @@ def _sequence_id_token(value: Any) -> str:
         return text
 
 
-def _load_st_gap_filled_sequences(data_dir: Path) -> set[tuple[str, str]]:
+def _load_st_gap_filled_sequences(
+    data_dir: Path,
+    provenance_path: Optional[Path] = None,
+) -> set[tuple[str, str]]:
     """Load sequence IDs that the calendar builder actually ST-gap-filled."""
-    provenance_path = data_dir.parent / "Pandora_science_calendar_sequence_provenance.csv"
+    provenance_path = provenance_path or (
+        data_dir.parent / "Pandora_science_calendar_sequence_provenance.csv"
+    )
     try:
         provenance = pd.read_csv(provenance_path, dtype=str)
     except (OSError, pd.errors.ParserError):
@@ -1906,6 +1911,7 @@ class ScheduleVisualizer:
         title,
         window_days,
         data_dir: Optional[Path] = None,
+        provenance_path: Optional[Path] = None,
     ):
         """Create multiple visibility-overlay plots split into fixed windows."""
         all_times = []
@@ -1945,6 +1951,7 @@ class ScheduleVisualizer:
                         figsize=figsize,
                         show_sequence_labels=show_sequence_labels,
                         title=window_title,
+                        provenance_path=provenance_path,
                     )
                 else:
                     fig = self.plot_gantt_with_visibility(
@@ -2469,6 +2476,7 @@ class ScheduleVisualizer:
         figsize=(14, 8),
         show_sequence_labels=False,
         title="Schedule by Priority — Visibility Overlay",
+        provenance_path: Optional[Path] = None,
     ):
         """Gantt chart colored by priority with ST-gap minutes
         overlaid in red.
@@ -2509,6 +2517,7 @@ class ScheduleVisualizer:
                     title=title,
                     window_days=7,
                     data_dir=Path(data_dir) if data_dir is not None else None,
+                    provenance_path=provenance_path,
                 )
 
         if data_dir is not None:
@@ -2518,6 +2527,7 @@ class ScheduleVisualizer:
                 figsize=figsize,
                 show_sequence_labels=show_sequence_labels,
                 title=title,
+                provenance_path=provenance_path,
             )
 
         from astropy import units as u
@@ -2688,11 +2698,15 @@ class ScheduleVisualizer:
         figsize=(14, 8),
         show_sequence_labels=False,
         title="Schedule by Priority — Visibility Overlay",
+        provenance_path: Optional[Path] = None,
     ):
         fig, ax = plt.subplots(figsize=figsize)
         priority_colors = self._get_priority_colors([1, 2, 3, 4, 5, 6, 7, 8])
         free_time_color = "lightgreen"
-        st_gap_filled_sequences = _load_st_gap_filled_sequences(data_dir)
+        st_gap_filled_sequences = _load_st_gap_filled_sequences(
+            data_dir,
+            provenance_path=provenance_path,
+        )
 
         exoplanet_csv = data_dir / "exoplanet_targets.csv"
         planet_to_star: dict[str, str] = {}
@@ -3394,6 +3408,11 @@ def _parse_args() -> argparse.Namespace:
         help="Run data directory containing visibility parquet files (required for --mode visibility).",
     )
     parser.add_argument(
+        "--provenance",
+        type=Path,
+        help="Sequence provenance CSV matching the supplied XML (used by --mode visibility).",
+    )
+    parser.add_argument(
         "--show-sequence-labels",
         action="store_true",
         help="Annotate sequence IDs on the plot when supported.",
@@ -3422,6 +3441,7 @@ def main() -> int:
         result = visualizer.plot_gantt_with_visibility(
             calendar,
             data_dir=args.data_dir,
+            provenance_path=args.provenance,
             show_sequence_labels=args.show_sequence_labels,
             title=f"{args.xml.stem} — Visibility Check",
         )

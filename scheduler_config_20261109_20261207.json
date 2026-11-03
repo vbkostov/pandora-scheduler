@@ -65,8 +65,6 @@
 
   "generate_xml": true,
   "include_occultation_sequences_in_xml": true,
-  
-  "occultation_windows_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261109_20261207/occultation_windows.csv",
 
   "obs_sequence_duration_min": 90,
   "occ_sequence_limit_min": 45,
@@ -110,7 +108,6 @@
   "notes": {
     "visibility_backend": "local == visibility from GMAT; pandoravisibility == visibility from pandora-visibility",
     "primary_visit_start_policy": "earliest = default behavior; centered = midpoint of feasible visit-start window; latest = last feasible minute",
-    "occultation_windows_csv": "HD_29037 is eligible only from 2026-11-20 17:00:00 through 2026-11-21 17:00:00 UTC",
-    "disabled_occultation_windows_csv_path": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261109_20261207/occultation_windows.csv"
+    "occultation_postprocess_windows_csv": "/Users/vkostov/Documents/GitHub/pandora-scheduler/output_20261109_20261207/occultation_windows.csv"
   }
 }
