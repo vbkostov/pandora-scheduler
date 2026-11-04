@@ -58,8 +58,8 @@
   "write_run_config_manifest": true,
 
   "exoplanet_only_mode": false,
-
   "primary_only_mode": false,
+  
   "use_target_list_for_occultations": false,
   "prioritise_occultations_by_slew": false,
 
