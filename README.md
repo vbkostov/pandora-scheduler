@@ -398,6 +398,11 @@ marked occultation sequences, handles sequences crossing the window boundary,
 and writes a matching provenance CSV beside the new XML. Science and Free Time
 sequences are left unchanged. The original XML is never overwritten.
 
+If the target is not present in the run's `occultation-standard_targets.csv`,
+`--target-definition-json` builds the XML payload metadata directly from that
+TDF. Its corresponding visibility parquet must already exist under the run's
+`aux_targets` directory.
+
 For visibility plots using the replacement calendar, pass the replacement
 provenance explicitly:
 

@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
+from pandorascheduler_rework.targets.manifest import build_target_manifest
 from pandorascheduler_rework.xml.builder import observation_sequence
 
 DEFAULT_WINDOWS_CSV = Path(
@@ -109,7 +110,34 @@ def _load_target_info(
         raise ValueError(f"Occultation catalog is missing 'Star Name': {catalog}")
     match = table.loc[table["Star Name"].astype(str).str.strip() == target_name]
     if match.empty:
-        raise ValueError(f"Target {target_name!r} not found in {catalog}")
+        if target_definition_json is None:
+            raise ValueError(
+                f"Target {target_name!r} not found in {catalog}. "
+                "Pass --target-definition-json for a one-off target."
+            )
+
+        category = target_definition_json.parent.name
+        base_dir = target_definition_json.parent.parent
+        manifest = build_target_manifest(category, base_dir)
+        target_columns = [
+            column
+            for column in ("Star Name", "Planet Name")
+            if column in manifest.columns
+        ]
+        if not target_columns:
+            raise ValueError(
+                f"Could not identify target columns in manifest built from "
+                f"{target_definition_json}"
+            )
+        match_mask = pd.Series(False, index=manifest.index)
+        for column in target_columns:
+            match_mask |= manifest[column].astype(str).str.strip().eq(target_name)
+        match = manifest.loc[match_mask]
+        if match.empty:
+            raise ValueError(
+                f"Target {target_name!r} not found in {catalog} or "
+                f"{target_definition_json}"
+            )
     result = match.iloc[[0]].copy()
     if target_definition_json is not None:
         with target_definition_json.open() as handle:
