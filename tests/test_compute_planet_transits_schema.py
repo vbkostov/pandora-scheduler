@@ -201,6 +201,34 @@ class TestHappyPath:
         assert (result["SAA_Overlap"] >= 0).all()
         assert (result["Transit_Coverage"] >= 0).all()
 
+    def test_includes_transit_overlapping_horizon_start(self, tmp_path):
+        window_start = datetime(2025, 2, 5)
+        cadence = pd.date_range(window_start, periods=360, freq="min")
+        t_mjd = Time(list(cadence.to_pydatetime()), scale="utc").mjd
+
+        star_path = tmp_path / "star_vis.parquet"
+        _write_star_parquet(star_path, t_mjd)
+
+        # Put the transit midpoint shortly after the visibility horizon starts.
+        # Its ingress is inside the horizon, but the old padded-visit test
+        # incorrectly discarded it.
+        desired_center = window_start + timedelta(minutes=30)
+        epoch = Time(desired_center, scale="utc").tdb.jd - 2400000.5
+        row = _make_planet_row(
+            transit_duration_hrs=2.0,
+            period_days=10.0,
+            epoch_bjd_tdb_minus=epoch,
+        )
+
+        result = _compute_planet_transits(
+            star_path, row, STAR_METADATA, OBSERVER
+        )
+
+        _assert_schema(result)
+        assert not result.empty
+        assert result.iloc[0]["Transit_Start_UTC"] < window_start
+        assert result.iloc[0]["Transit_Stop_UTC"] > window_start
+
 
 # --------------------------------------------------------------------------
 # Round-trip: write → read with column selection (what downstream code does)

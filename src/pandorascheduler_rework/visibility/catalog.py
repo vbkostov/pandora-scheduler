@@ -631,9 +631,6 @@ def _compute_planet_transits(
     jd_tdb = bjd_tdb - light_time
     epoch_mjd_utc = Time(jd_tdb.mjd, format="mjd", scale="utc")
 
-    half_obs_width = 0.75 * u.hour + np.maximum(
-        1.0 * u.hour + transit_duration / 2.0, transit_duration
-    )
     time_grid = Time(t_mjd, format="mjd", scale="utc")
 
     if period <= 0 * u.day:
@@ -653,16 +650,21 @@ def _compute_planet_transits(
             }
         )
 
-    min_start_epoch = epoch_mjd_utc - half_obs_width
-    elapsed_days = (time_grid[0] - min_start_epoch).to(u.day)
-    min_pers_start = np.ceil((elapsed_days / period).value)
-
-    first_transit = epoch_mjd_utc + min_pers_start * period
+    # Include any transit interval that overlaps the visibility horizon.  The
+    # previous calculation required a padded visit-support window to begin
+    # inside the horizon, which dropped valid boundary transits such as a
+    # transit whose ingress is shortly after the run start.
+    half_transit = transit_duration / 2.0
+    elapsed_days = (
+        (time_grid[0] - epoch_mjd_utc - half_transit).to(u.day)
+    )
+    first_transit_number = np.ceil((elapsed_days / period).value)
+    first_transit = epoch_mjd_utc + first_transit_number * period
 
     mid_transits_list: list[Time] = []
     current = first_transit
     last_time = time_grid[-1]
-    while current < last_time:
+    while current - half_transit < last_time:
         mid_transits_list.append(current)
         current = current + period
 
@@ -680,8 +682,8 @@ def _compute_planet_transits(
         )
 
     mid_transits = Time(mid_transits_list)
-    start_transits = mid_transits - transit_duration / 2.0
-    end_transits = mid_transits + transit_duration / 2.0
+    start_transits = mid_transits - half_transit
+    end_transits = mid_transits + half_transit
 
     start_datetimes = start_transits.to_value("datetime")
     end_datetimes = end_transits.to_value("datetime")
