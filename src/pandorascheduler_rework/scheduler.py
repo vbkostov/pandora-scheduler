@@ -701,16 +701,16 @@ def _load_too_table(
 
     # Accept conventional CSV formatting with spaces after delimiters.
     table = pd.read_csv(too_path, skipinitialspace=True)
+    starts = pd.to_datetime(
+        table["Obs Window Start"], format="mixed", errors="raise"
+    )
+    stops = pd.to_datetime(
+        table["Obs Window Stop"], format="mixed", errors="raise"
+    )
     return (
         table["Target"].tolist(),
-        [
-            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-            for value in table["Obs Window Start"]
-        ],
-        [
-            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-            for value in table["Obs Window Stop"]
-        ],
+        [value.to_pydatetime() for value in starts],
+        [value.to_pydatetime() for value in stops],
     )
 
 

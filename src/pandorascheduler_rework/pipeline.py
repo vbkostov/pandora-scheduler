@@ -414,8 +414,14 @@ def _validate_too_list(too_list_csv: Path, target_list: pd.DataFrame) -> None:
             "manifest construction."
         )
 
-    starts = pd.to_datetime(too_table["Obs Window Start"], errors="coerce")
-    stops = pd.to_datetime(too_table["Obs Window Stop"], errors="coerce")
+    # ToO files commonly mix minute- and second-precision timestamps.  Use
+    # pandas' per-value parser instead of inferring one format from the first row.
+    starts = pd.to_datetime(
+        too_table["Obs Window Start"], format="mixed", errors="coerce"
+    )
+    stops = pd.to_datetime(
+        too_table["Obs Window Stop"], format="mixed", errors="coerce"
+    )
     bad_times = too_table.loc[starts.isna() | stops.isna()]
     if not bad_times.empty:
         raise ValueError(
